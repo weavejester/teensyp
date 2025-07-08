@@ -20,4 +20,4 @@
   {:pre [(int? port)]}
   (let [server-ch (server-socket-channel port)]
     (start-daemon-thread #(server-loop server-ch))
-    (fn stop-server [] (.close server-ch))))
+    server-ch))
