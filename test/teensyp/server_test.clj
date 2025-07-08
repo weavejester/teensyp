@@ -2,5 +2,7 @@
   (:require [clojure.test :refer [deftest is]]
             [teensyp.server :as tcp]))
 
-(deftest a-test
-  (is (fn? (tcp/start-server {}))))
+(deftest server-test
+  (let [stop-server (tcp/start-server {:port 3456})]
+    (is (fn? stop-server))
+    (stop-server)))
