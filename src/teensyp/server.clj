@@ -27,27 +27,28 @@
 (defn- update-interest [^SelectionKey key f op]
   (.interestOps key (f (.interestOps key) op)))
 
-(defn write [^SelectionKey key buffer]
-  (-> key .attachment :write-queue (.add buffer))
+(def ^:private closed (Object.))
+
+(defn- write [^SelectionKey key buffer]
+  (-> key .attachment :write-queue (.add (or buffer closed)))
   (update-interest key bit-or SelectionKey/OP_WRITE))
 
-(defn close [key]
-  (write key ::close))
-
-(defn- handle-accept [^Selector selector ^SelectionKey key]
+(defn- handle-accept
+  [^Selector selector ^SelectionKey key {:keys [init handler]}]
   (let [^SocketChannel ch (-> key .channel .accept)]
     (.configureBlocking ch false)
-    (let [key (.register ch selector SelectionKey/OP_READ
-                         {:write-queue (ArrayDeque.)})]
-      (write key (ByteBuffer/wrap (.getBytes "hello\n")))
-      (close key))))
+    (let [data (volatile! init)
+          key  (.register ch selector SelectionKey/OP_READ
+                          {:write-queue (ArrayDeque.)
+                           :read-data   data})]
+      (vswap! data handler #(write key %)))))
 
-(defn- handle-write [^SelectionKey key]
+(defn- handle-write [^SelectionKey key opts]
   (let [^ArrayDeque queue (-> key .attachment :write-queue)
         ^SocketChannel ch (-> key .channel)]
     (loop []
       (if-some [buffer (.peek queue)]
-        (if (= ::close buffer)
+        (if (identical? buffer closed)
           (.close ch)
           (do (.write ch ^ByteBuffer buffer)
               (when-not (.hasRemaining ^ByteBuffer buffer)
@@ -56,21 +57,22 @@
         (update-interest key bit-and-not SelectionKey/OP_WRITE)))))
 
 (defn- handle-key
-  [selector ^SelectionKey key ^ExecutorService executor]
+  [selector ^SelectionKey key ^ExecutorService executor opts]
   (letfn [(submit [f] (.submit executor ^Runnable f))]
     (when (.isValid key)
       (cond
         (.isAcceptable key)
-        (handle-accept selector key)
+        (handle-accept selector key opts)
         (.isWritable key)
-        (handle-write key)))))
+        (handle-write key opts)))))
 
 (defn- server-loop
-  [^ServerSocketChannel server-ch ^Selector selector executor]
+  [^ServerSocketChannel server-ch ^Selector selector executor opts]
   (loop []
     (when (.isOpen server-ch)
       (.select selector)
-      (foreach! #(handle-key selector % executor) (.selectedKeys selector))
+      (foreach! #(handle-key selector % executor opts)
+                (.selectedKeys selector))
       (recur))))
 
 (defn- start-daemon-thread [^Runnable r]
@@ -81,10 +83,10 @@
     (Executors/newFixedThreadPool (+ 2 processors))))
 
 (defn start-server
-  [{:keys [port executor]}]
+  [{:keys [port executor] :as opts}]
   {:pre [(int? port)]}
   (let [server-ch (server-socket-channel port)
         selector  (server-selector server-ch)
         executor  (or executor (new-default-executor))]
-    (start-daemon-thread #(server-loop server-ch selector executor))
+    (start-daemon-thread #(server-loop server-ch selector executor opts))
     server-ch))
