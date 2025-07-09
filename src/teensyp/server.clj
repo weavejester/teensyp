@@ -29,28 +29,31 @@
     (.write ch (ByteBuffer/wrap (.getBytes "hello\n")))
     (.close ch)))
 
-(defn- handle-key [^SelectionKey key ^ExecutorService workers]
+(defn- handle-key [^SelectionKey key ^ExecutorService executor]
   (when (.isValid key)
     (when (.isAcceptable key)
-      (.submit workers ^Runnable #(handle-accept key)))))
+      (.submit executor ^Runnable #(handle-accept key)))))
 
 (defn- server-loop
-  [^ServerSocketChannel server-ch ^Selector selector workers]
+  [^ServerSocketChannel server-ch ^Selector selector executor]
   (loop []
     (when (.isOpen server-ch)
       (.select selector)
-      (foreach! #(handle-key % workers) (.selectedKeys selector))
+      (foreach! #(handle-key % executor) (.selectedKeys selector))
       (recur))))
 
 (defn- start-daemon-thread [^Runnable r]
   (doto (Thread. r) (.setDaemon true) (.start)))
 
+(defn- new-default-executor []
+  (let [processors (.availableProcessors (Runtime/getRuntime))]
+    (Executors/newFixedThreadPool (+ 2 processors))))
+
 (defn start-server
-  [{:keys [port worker-threads]
-    :or {worker-threads 8}}]
+  [{:keys [port executor]}]
   {:pre [(int? port)]}
   (let [server-ch (server-socket-channel port)
         selector  (server-selector server-ch)
-        workers   (Executors/newFixedThreadPool worker-threads)]
-    (start-daemon-thread #(server-loop server-ch selector workers))
+        executor  (or executor (new-default-executor))]
+    (start-daemon-thread #(server-loop server-ch selector executor))
     server-ch))
