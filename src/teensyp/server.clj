@@ -34,15 +34,18 @@
   (update-interest key bit-or SelectionKey/OP_WRITE))
 
 (defn- handle-accept
-  [^Selector selector ^SelectionKey key _submit {:keys [init write handler]}]
+  [^Selector selector ^SelectionKey key submit {:keys [init write handler]}]
   (let [^SocketChannel ch (-> key .channel .accept)]
     (.configureBlocking ch false)
     (let [data   (volatile! init)
-          key    (.register ch selector SelectionKey/OP_READ
-                            {:write-queue (ArrayDeque.)
-                             :read-data   data})
+          key    (.register ch selector 0 {:write-queue (ArrayDeque.)
+                                           :read-data   data})
           writef #(write-buffer key (some-> % write))]
-      (vswap! data handler writef))))
+      (submit
+       #(try (vswap! data handler writef)
+             (finally
+               (update-interest key bit-or SelectionKey/OP_READ)
+               (.wakeup selector)))))))
 
 (defn- handle-write [^SelectionKey key _opts]
   (let [^ArrayDeque queue (-> key .attachment :write-queue)
