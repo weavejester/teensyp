@@ -29,21 +29,22 @@
 
 (def ^:private closed (Object.))
 
-(defn- write [^SelectionKey key buffer]
+(defn- write-buffer [^SelectionKey key buffer]
   (-> key .attachment :write-queue (.add (or buffer closed)))
   (update-interest key bit-or SelectionKey/OP_WRITE))
 
 (defn- handle-accept
-  [^Selector selector ^SelectionKey key {:keys [init handler]}]
+  [^Selector selector ^SelectionKey key _submit {:keys [init write handler]}]
   (let [^SocketChannel ch (-> key .channel .accept)]
     (.configureBlocking ch false)
-    (let [data (volatile! init)
-          key  (.register ch selector SelectionKey/OP_READ
-                          {:write-queue (ArrayDeque.)
-                           :read-data   data})]
-      (vswap! data handler #(write key %)))))
+    (let [data   (volatile! init)
+          key    (.register ch selector SelectionKey/OP_READ
+                            {:write-queue (ArrayDeque.)
+                             :read-data   data})
+          writef #(write-buffer key (some-> % write))]
+      (vswap! data handler writef))))
 
-(defn- handle-write [^SelectionKey key opts]
+(defn- handle-write [^SelectionKey key _opts]
   (let [^ArrayDeque queue (-> key .attachment :write-queue)
         ^SocketChannel ch (-> key .channel)]
     (loop []
@@ -56,27 +57,26 @@
                 (recur))))
         (update-interest key bit-and-not SelectionKey/OP_WRITE)))))
 
-(defn- handle-key
-  [selector ^SelectionKey key ^ExecutorService executor opts]
-  (letfn [(submit [f] (.submit executor ^Runnable f))]
-    (when (.isValid key)
-      (cond
-        (.isAcceptable key)
-        (handle-accept selector key opts)
-        (.isWritable key)
-        (handle-write key opts)))))
+(defn- handle-key [selector ^SelectionKey key submit opts]
+  (when (.isValid key)
+    (cond
+      (.isAcceptable key)
+      (handle-accept selector key submit opts)
+      (.isWritable key)
+      (handle-write key opts))))
 
 (defn- server-loop
   [^ServerSocketChannel server-ch ^Selector selector executor opts]
-  (try
-    (loop []
-      (when (.isOpen server-ch)
-        (.select selector)
-        (foreach! #(handle-key selector % executor opts)
-                  (.selectedKeys selector))
-        (recur)))
-    (finally
-      (.shutdown executor))))
+  (letfn [(submit [f] (.submit executor ^Runnable f))]
+    (try
+      (loop []
+        (when (.isOpen server-ch)
+          (.select selector)
+          (foreach! #(handle-key selector % submit opts)
+                    (.selectedKeys selector))
+          (recur)))
+      (finally
+        (.shutdown executor)))))
 
 (defn- start-daemon-thread [^Runnable r]
   (doto (Thread. r) (.setDaemon true) (.start)))
