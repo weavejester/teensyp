@@ -2,7 +2,8 @@
   (:import [java.net InetSocketAddress]
            [java.nio ByteBuffer]
            [java.nio.channels Selector SelectionKey
-            ServerSocketChannel SocketChannel]))
+            ServerSocketChannel SocketChannel]
+           [java.util.concurrent Executors ExecutorService]))
 
 (defn- server-socket-channel ^ServerSocketChannel [port]
   (doto (ServerSocketChannel/open)
@@ -22,27 +23,34 @@
         (.remove iter)
         (recur)))))
 
-(defn- handle-key [^SelectionKey key]
+(defn- handle-accept [^SelectionKey key]
+  (let [^SocketChannel ch (-> key .channel .accept)]
+    (.configureBlocking ch false)
+    (.write ch (ByteBuffer/wrap (.getBytes "hello\n")))
+    (.close ch)))
+
+(defn- handle-key [^SelectionKey key ^ExecutorService workers]
   (when (.isValid key)
     (when (.isAcceptable key)
-      (let [^SocketChannel ch (-> key .channel .accept)]
-        (.configureBlocking ch false)
-        (.write ch (ByteBuffer/wrap (.getBytes "hello\n")))
-        (.close ch)))))
+      (.submit workers ^Runnable #(handle-accept key)))))
 
-(defn- server-loop [^ServerSocketChannel server-ch ^Selector selector]
+(defn- server-loop
+  [^ServerSocketChannel server-ch ^Selector selector workers]
   (loop []
     (when (.isOpen server-ch)
       (.select selector)
-      (iter-selection-keys selector handle-key)
+      (iter-selection-keys selector #(handle-key % workers))
       (recur))))
 
 (defn- start-daemon-thread [^Runnable r]
   (doto (Thread. r) (.setDaemon true) (.start)))
 
-(defn start-server [{:keys [port]}]
+(defn start-server
+  [{:keys [port worker-threads]
+    :or {worker-threads 8}}]
   {:pre [(int? port)]}
   (let [server-ch (server-socket-channel port)
-        selector  (server-selector server-ch)]
-    (start-daemon-thread #(server-loop server-ch selector))
+        selector  (server-selector server-ch)
+        workers   (Executors/newFixedThreadPool worker-threads)]
+    (start-daemon-thread #(server-loop server-ch selector workers))
     server-ch))
