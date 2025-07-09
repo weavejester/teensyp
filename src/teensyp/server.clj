@@ -3,6 +3,7 @@
            [java.nio ByteBuffer]
            [java.nio.channels Selector SelectionKey
             ServerSocketChannel SocketChannel]
+           [java.util ArrayDeque]
            [java.util.concurrent Executors ExecutorService]))
 
 (defn- server-socket-channel ^ServerSocketChannel [port]
@@ -23,23 +24,53 @@
         (.remove iter)
         (recur)))))
 
-(defn- handle-accept [^SelectionKey key]
+(defn- update-interest [^SelectionKey key f op]
+  (.interestOps key (f (.interestOps key) op)))
+
+(defn write [^SelectionKey key buffer]
+  (-> key .attachment :write-queue (.add buffer))
+  (update-interest key bit-or SelectionKey/OP_WRITE))
+
+(defn close [key]
+  (write key ::close))
+
+(defn- handle-accept [^Selector selector ^SelectionKey key]
   (let [^SocketChannel ch (-> key .channel .accept)]
     (.configureBlocking ch false)
-    (.write ch (ByteBuffer/wrap (.getBytes "hello\n")))
-    (.close ch)))
+    (let [key (.register ch selector SelectionKey/OP_READ
+                         {:write-queue (ArrayDeque.)})]
+      (write key (ByteBuffer/wrap (.getBytes "hello\n")))
+      (close key))))
 
-(defn- handle-key [^SelectionKey key ^ExecutorService executor]
-  (when (.isValid key)
-    (when (.isAcceptable key)
-      (.submit executor ^Runnable #(handle-accept key)))))
+(defn- handle-write [^SelectionKey key]
+  (let [^ArrayDeque queue (-> key .attachment :write-queue)
+        ^SocketChannel ch (-> key .channel)]
+    (loop []
+      (if-some [buffer (.peek queue)]
+        (if (= ::close buffer)
+          (.close ch)
+          (do (.write ch ^ByteBuffer buffer)
+              (when-not (.hasRemaining ^ByteBuffer buffer)
+                (.poll queue)
+                (recur))))
+        (update-interest key bit-and-not SelectionKey/OP_WRITE)))))
+
+(defn- handle-key
+  [selector ^SelectionKey key ^ExecutorService executor]
+  (letfn [(submit [f] (.submit executor ^Runnable f))]
+    (when (.isValid key)
+      (cond
+        (.isAcceptable key)
+        (handle-accept selector key)
+        (.isWritable key)
+        (handle-write key)))))
 
 (defn- server-loop
   [^ServerSocketChannel server-ch ^Selector selector executor]
   (loop []
     (when (.isOpen server-ch)
       (.select selector)
-      (foreach! #(handle-key % executor) (.selectedKeys selector))
+      (foreach! #(handle-key selector % executor) (.selectedKeys selector))
       (recur))))
 
 (defn- start-daemon-thread [^Runnable r]
