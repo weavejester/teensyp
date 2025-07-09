@@ -33,16 +33,20 @@
   (-> key .attachment :write-queue (.add (or buffer closed)))
   (update-interest key bit-or SelectionKey/OP_WRITE))
 
+(defn- new-context [{:keys [init]}]
+  {:write-queue (ArrayDeque.)
+   :read-state  (volatile! init)})
+
 (defn- handle-accept
-  [^Selector selector ^SelectionKey key submit {:keys [init write handler]}]
-  (let [^SocketChannel ch (-> key .channel .accept)]
+  [^SelectionKey key submit {:keys [write handler] :as opts}]
+  (let [^Selector selector (-> key .selector)
+        ^SocketChannel  ch (-> key .channel .accept)]
     (.configureBlocking ch false)
-    (let [data   (volatile! init)
-          key    (.register ch selector 0 {:write-queue (ArrayDeque.)
-                                           :read-data   data})
-          writef #(write-buffer key (some-> % write))]
+    (let [context (new-context opts)
+          key     (.register ch selector 0 context)
+          writef  #(write-buffer key (some-> % write))]
       (submit
-       #(try (vswap! data handler writef)
+       #(try (vswap! (:read-state context) handler writef)
              (finally
                (update-interest key bit-or SelectionKey/OP_READ)
                (.wakeup selector)))))))
@@ -60,23 +64,21 @@
                 (recur))))
         (update-interest key bit-and-not SelectionKey/OP_WRITE)))))
 
-(defn- handle-key [selector ^SelectionKey key submit opts]
+(defn- handle-key [^SelectionKey key submit opts]
   (when (.isValid key)
     (cond
-      (.isAcceptable key)
-      (handle-accept selector key submit opts)
-      (.isWritable key)
-      (handle-write key opts))))
+      (.isAcceptable key) (handle-accept key submit opts)
+      (.isWritable key)   (handle-write key opts))))
 
 (defn- server-loop
-  [^ServerSocketChannel server-ch ^Selector selector executor opts]
+  [^ServerSocketChannel server-ch ^Selector selector
+   ^ExecutorService executor opts]
   (letfn [(submit [f] (.submit executor ^Runnable f))]
     (try
       (loop []
         (when (.isOpen server-ch)
           (.select selector)
-          (foreach! #(handle-key selector % submit opts)
-                    (.selectedKeys selector))
+          (foreach! #(handle-key % submit opts) (.selectedKeys selector))
           (recur)))
       (finally
         (.shutdown executor)))))
