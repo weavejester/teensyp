@@ -15,8 +15,8 @@
     (.register server-ch selector SelectionKey/OP_ACCEPT)
     selector))
 
-(defn- iter-selection-keys [^Selector selector f]
-  (let [iter (-> selector .selectedKeys .iterator)]
+(defn- foreach! [f ^Iterable coll]
+  (let [iter (.iterator coll)]
     (loop []
       (when (.hasNext iter)
         (f (.next iter))
@@ -39,7 +39,7 @@
   (loop []
     (when (.isOpen server-ch)
       (.select selector)
-      (iter-selection-keys selector #(handle-key % workers))
+      (foreach! #(handle-key % workers) (.selectedKeys selector))
       (recur))))
 
 (defn- start-daemon-thread [^Runnable r]
