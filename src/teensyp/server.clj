@@ -68,12 +68,15 @@
 
 (defn- server-loop
   [^ServerSocketChannel server-ch ^Selector selector executor opts]
-  (loop []
-    (when (.isOpen server-ch)
-      (.select selector)
-      (foreach! #(handle-key selector % executor opts)
-                (.selectedKeys selector))
-      (recur))))
+  (try
+    (loop []
+      (when (.isOpen server-ch)
+        (.select selector)
+        (foreach! #(handle-key selector % executor opts)
+                  (.selectedKeys selector))
+        (recur)))
+    (finally
+      (.shutdown executor))))
 
 (defn- start-daemon-thread [^Runnable r]
   (doto (Thread. r) (.setDaemon true) (.start)))
