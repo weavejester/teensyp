@@ -25,14 +25,14 @@
         (.remove iter)
         (recur)))))
 
-(defn- update-interest [^SelectionKey key f op]
+(defn- update-ops [^SelectionKey key f op]
   (.interestOps key (f (.interestOps key) op)))
 
 (def closed (Object.))
 
 (defn- write-buffer [^SelectionKey key buffer]
   (-> key .attachment :write-queue (.add buffer))
-  (update-interest key bit-or SelectionKey/OP_WRITE))
+  (update-ops key bit-or SelectionKey/OP_WRITE))
 
 (defn- new-context [{:keys [init buffer-size]
                      :or   {buffer-size 8192}}]
@@ -51,7 +51,7 @@
       (submit
        #(try (vswap! (:read-state context) handler writef)
              (finally
-               (update-interest key bit-or SelectionKey/OP_READ)
+               (update-ops key bit-or SelectionKey/OP_READ)
                (.wakeup selector)))))))
 
 (defn- handle-close
@@ -71,7 +71,7 @@
                    (when-not (.hasRemaining ^ByteBuffer buffer)
                      (.poll queue)
                      (recur))))
-             (update-interest key bit-and-not SelectionKey/OP_WRITE)))
+             (update-ops key bit-and-not SelectionKey/OP_WRITE)))
          (catch IOException ex
            (handle-close key submit ex opts)))))
 
@@ -81,7 +81,7 @@
         ^SocketChannel  ch (-> key .channel)
         ^Selector selector (-> key .selector)
         writef #(write-buffer key (some-> % write))]
-    (update-interest key bit-and-not SelectionKey/OP_READ)
+    (update-ops key bit-and-not SelectionKey/OP_READ)
     (try
       (if (neg? (.read ch read-buffer))
         (handle-close key submit nil opts)
@@ -91,7 +91,7 @@
                    (vswap! read-state handler writef)
                    (finally
                      (.compact read-buffer)
-                     (update-interest key bit-or SelectionKey/OP_READ)
+                     (update-ops key bit-or SelectionKey/OP_READ)
                      (.wakeup selector))))))
       (catch IOException ex
         (handle-close key submit ex opts)))))
