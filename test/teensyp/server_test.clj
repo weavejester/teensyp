@@ -10,8 +10,8 @@
   (with-open [server (tcp/start-server {:port 3456})]
     (is (instance? java.io.Closeable server))))
 
-(defn- string-write [s]
-  (ByteBuffer/wrap (.getBytes s StandardCharsets/UTF_8)))
+(defn- string-write [s write]
+  (write (ByteBuffer/wrap (.getBytes s StandardCharsets/UTF_8))))
 
 (defn- hello-handler [_ write]
   (write "hello\n")

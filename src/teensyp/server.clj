@@ -47,7 +47,7 @@
     (.configureBlocking ch false)
     (let [context (new-context opts)
           key     (.register ch selector 0 context)
-          writef  #(write-buffer key (some-> % write))]
+          writef  #(write % (fn [buf] (write-buffer key buf)))]
       (submit
        #(try (vswap! (:read-state context) watch writef)
              (finally
@@ -80,7 +80,7 @@
   (let [{:keys [^ByteBuffer read-buffer read-state]} (.attachment key)
         ^SocketChannel  ch (-> key .channel)
         ^Selector selector (-> key .selector)
-        writef #(write-buffer key (some-> % write))]
+        writef #(write % (fn [buf] (write-buffer key buf)))]
     (update-ops key bit-and-not SelectionKey/OP_READ)
     (try
       (if (neg? (.read ch read-buffer))
