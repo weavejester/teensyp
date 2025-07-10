@@ -19,9 +19,9 @@
 
 (deftest server-write-test
   (with-open [_ (tcp/start-server
-                 {:port    3457
-                  :handler hello-handler
-                  :write   string-write})]
+                 {:port  3457
+                  :watch hello-handler
+                  :write string-write})]
     (let [sock (Socket. "localhost" 3457)]
       (with-open [reader (io/reader (.getInputStream sock))]
         (is (= "hello" (.readLine reader)))))))
@@ -37,10 +37,10 @@
 
 (deftest server-echo-test
   (with-open [_ (tcp/start-server
-                 {:port    3458
-                  :handler echo-handler
-                  :write   string-write
-                  :read    string-read})]
+                 {:port  3458
+                  :watch echo-handler
+                  :write string-write
+                  :read  string-read})]
     (let [sock (Socket. "localhost" 3458)]
       (with-open [writer (io/writer (.getOutputStream sock))]
         (with-open [reader (io/reader (.getInputStream sock))]
@@ -54,8 +54,8 @@
 (deftest server-socket-close-test
   (let [closed? (promise)]
     (with-open [_ (tcp/start-server
-                   {:port    3459
-                    :handler (fn [_ _])
-                    :close   (fn [_ _] (deliver closed? true))})]
+                   {:port  3459
+                    :watch (fn [_ _])
+                    :close (fn [_ _] (deliver closed? true))})]
       (.close (Socket. "localhost" 3459))
       (is (deref closed? 100 false)))))

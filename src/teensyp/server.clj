@@ -41,7 +41,7 @@
    :read-buffer (ByteBuffer/allocate buffer-size)})
 
 (defn- handle-accept
-  [^SelectionKey key submit {:keys [write handler] :as opts}]
+  [^SelectionKey key submit {:keys [write watch] :as opts}]
   (let [^Selector selector (-> key .selector)
         ^SocketChannel  ch (-> key .channel .accept)]
     (.configureBlocking ch false)
@@ -49,7 +49,7 @@
           key     (.register ch selector 0 context)
           writef  #(write-buffer key (some-> % write))]
       (submit
-       #(try (vswap! (:read-state context) handler writef)
+       #(try (vswap! (:read-state context) watch writef)
              (finally
                (update-ops key bit-or SelectionKey/OP_READ)
                (.wakeup selector)))))))
@@ -76,7 +76,7 @@
            (handle-close key submit ex opts)))))
 
 (defn- handle-read
-  [^SelectionKey key submit {:keys [handler read write] :as opts}]
+  [^SelectionKey key submit {:keys [watch read write] :as opts}]
   (let [{:keys [^ByteBuffer read-buffer read-state]} (.attachment key)
         ^SocketChannel  ch (-> key .channel)
         ^Selector selector (-> key .selector)
@@ -88,7 +88,7 @@
         (do (.flip read-buffer)
             (submit
              #(try (vswap! read-state read read-buffer)
-                   (vswap! read-state handler writef)
+                   (vswap! read-state watch writef)
                    (finally
                      (.compact read-buffer)
                      (update-ops key bit-or SelectionKey/OP_READ)
