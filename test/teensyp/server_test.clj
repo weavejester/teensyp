@@ -46,3 +46,12 @@
           (.write writer "foobar\n")
           (.flush writer)
           (is (= "foobar" (.readLine reader))))))))
+
+(deftest server-socket-close-test
+  (let [closed? (promise)]
+    (with-open [_ (tcp/start-server
+                   {:port    3459
+                    :handler (fn [_ _])
+                    :close   (fn [_ _] (deliver closed? true))})]
+      (.close (Socket. "localhost" 3459))
+      (is (deref closed? 100 false)))))
