@@ -1,4 +1,4 @@
-# TeensyP
+# TeensyP [![Build Status](https://github.com/weavejester/teensyp/actions/workflows/test.yml/badge.svg)](https://github.com/weavejester/teensyp/actions/workflows/test.yml)
 
 A small Clojure TCP server.
 
