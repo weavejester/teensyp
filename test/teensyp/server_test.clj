@@ -1,7 +1,8 @@
 (ns teensyp.server-test
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is]]
-            [teensyp.server :as tcp])
+            [teensyp.server :as tcp]
+            [teensyp.buffer :as buf])
   (:import [java.net Socket]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]))
@@ -10,12 +11,9 @@
   (with-open [server (tcp/start-server {:port 3456})]
     (is (instance? java.io.Closeable server))))
 
-(defn ->buffer [^String s]
-  (ByteBuffer/wrap (.getBytes s StandardCharsets/UTF_8)))
-
 (defn- hello-handler
   ([write]
-   (write (->buffer "hello\n"))
+   (write (buf/str->buffer "hello\n"))
    (write tcp/closed))
   ([_state _buffer _write])
   ([_state _exception]))
@@ -37,7 +35,7 @@
   ([_write])
   ([_state buffer write]
    (let [s (<-buffer buffer)]
-     (write (->buffer s))))
+     (write (buf/str->buffer s))))
   ([_state _exception]))
 
 (deftest server-echo-test
