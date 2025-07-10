@@ -116,9 +116,6 @@
       (finally
         (.shutdown executor)))))
 
-(defn- start-daemon-thread [^Runnable r]
-  (doto (Thread. r) (.setDaemon true) (.start)))
-
 (defn- new-default-executor []
   (let [processors (.availableProcessors (Runtime/getRuntime))]
     (Executors/newFixedThreadPool (+ 2 processors))))
@@ -129,5 +126,5 @@
   (let [server-ch (server-socket-channel port)
         selector  (server-selector server-ch)
         executor  (or executor (new-default-executor))]
-    (start-daemon-thread #(server-loop server-ch selector executor opts))
+    (.start (Thread. #(server-loop server-ch selector executor opts)))
     server-ch))
