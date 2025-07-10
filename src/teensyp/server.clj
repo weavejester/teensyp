@@ -37,10 +37,9 @@
   (-> key .attachment :write-queue (.add buffer))
   (update-ops key bit-or SelectionKey/OP_WRITE))
 
-(defn- new-context [{:keys [init buffer-size]
-                     :or   {buffer-size 8192}}]
+(defn- new-context [{:keys [buffer-size] :or {buffer-size 8192}}]
   {:write-queue (ArrayDeque.)
-   :read-state  (volatile! init)
+   :state       (volatile! nil)
    :read-buffer (ByteBuffer/allocate buffer-size)})
 
 (defn- handle-accept
@@ -48,19 +47,19 @@
   (let [^Selector selector (-> key .selector)
         ^SocketChannel  ch (-> key .channel .accept)]
     (.configureBlocking ch false)
-    (let [context (new-context opts)
-          key     (.register ch selector 0 context)]
+    (let [{:keys [state] :as context} (new-context opts)
+          key (.register ch selector 0 context)]
       (submit (fn []
-                (try (vswap! (:read-state context) handler #(write key %))
+                (try (vreset! state (handler #(write key %)))
                      (finally
                        (update-ops key bit-or SelectionKey/OP_READ)
                        (.wakeup selector))))))))
 
 (defn- handle-close
-  [^SelectionKey key submit {:keys [handler]}]
-  (let [read-state (-> key .attachment :read-state)]
+  [^SelectionKey key submit ex {:keys [handler]}]
+  (let [state (-> key .attachment :state)]
     (-> key .channel .close)
-    (submit #(vswap! read-state handler))))
+    (submit #(vswap! state handler ex))))
 
 (defn- handle-write [^SelectionKey key submit opts]
   (let [^ArrayDeque queue (-> key .attachment :write-queue)
@@ -74,28 +73,28 @@
                      (.poll queue)
                      (recur))))
              (update-ops key bit-and-not SelectionKey/OP_WRITE)))
-         (catch IOException _
-           (handle-close key submit opts)))))
+         (catch IOException ex
+           (handle-close key submit ex opts)))))
 
 (defn- handle-read
   [^SelectionKey key submit {:keys [handler] :as opts}]
-  (let [{:keys [^ByteBuffer read-buffer read-state]} (.attachment key)
+  (let [{:keys [^ByteBuffer read-buffer state]} (.attachment key)
         ^SocketChannel  ch (-> key .channel)
         ^Selector selector (-> key .selector)]
     (update-ops key bit-and-not SelectionKey/OP_READ)
     (try
       (if (neg? (.read ch read-buffer))
-        (handle-close key submit opts)
+        (handle-close key submit nil opts)
         (do (.flip read-buffer)
             (submit
              (fn []
-               (try (vswap! read-state handler read-buffer #(write key %))
+               (try (vswap! state handler read-buffer #(write key %))
                     (finally
                       (.compact read-buffer)
                       (update-ops key bit-or SelectionKey/OP_READ)
                       (.wakeup selector)))))))
-      (catch IOException _
-        (handle-close key submit opts)))))
+      (catch IOException ex
+        (handle-close key submit ex opts)))))
 
 (defn- handle-key [^SelectionKey key submit opts]
   (when (.isValid key)
@@ -132,9 +131,9 @@
   The handler function must have three arities:
 
       (fn handler
-        ([state write] state)         ;; on accept
-        ([state buffer write] state)  ;; on read
-        ([state] state))              ;; on close
+        ([write] initial-state)           ;; on socket accept
+        ([state buffer write] new-state)  ;; on socket read data
+        ([state exception]))              ;; on socket close
 
   The `buffer` is a java.nio.ByteBuffer instance, and `write` is a function
   that takes a buffer as an argument and will queue it to send to the client.
@@ -142,7 +141,10 @@
 
   The `state` is a custom data structure that is returned when the accept or
   read arities are triggered. A different state is associated with each
-  connection."
+  connection.
+
+  When closing, the `exception` may contain the exception that terminated the
+  channel, or `nil` if the channel were terminated gracefully."
   [{:keys [port executor] :as opts}]
   {:pre [(int? port)]}
   (let [server-ch (server-socket-channel port)

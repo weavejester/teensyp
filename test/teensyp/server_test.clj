@@ -14,11 +14,11 @@
   (ByteBuffer/wrap (.getBytes s StandardCharsets/UTF_8)))
 
 (defn- hello-handler
-  ([_state write]
+  ([write]
    (write (->buffer "hello\n"))
    (write tcp/closed))
   ([_state _buffer _write])
-  ([_state]))
+  ([_state _exception]))
 
 (deftest server-write-test
   (with-open [_ (tcp/start-server
@@ -34,11 +34,11 @@
     (String. b StandardCharsets/UTF_8)))
 
 (defn- echo-handler
-  ([_state _write])
+  ([_write])
   ([_state buffer write]
    (let [s (<-buffer buffer)]
      (write (->buffer s))))
-  ([_state]))
+  ([_state _exception]))
 
 (deftest server-echo-test
   (with-open [_ (tcp/start-server
@@ -60,8 +60,8 @@
                    {:port  3459
                     :handler
                     (fn
-                      ([_ _])
+                      ([_])
                       ([_ _ _])
-                      ([_] (deliver closed? true)))})]
+                      ([_ _] (deliver closed? true)))})]
       (.close (Socket. "localhost" 3459))
       (is (deref closed? 100 false)))))
