@@ -10,37 +10,40 @@
   (with-open [server (tcp/start-server {:port 3456})]
     (is (instance? java.io.Closeable server))))
 
-(defn- string-write [s write]
-  (write (ByteBuffer/wrap (.getBytes s StandardCharsets/UTF_8))))
+(defn ->buffer [^String s]
+  (ByteBuffer/wrap (.getBytes s StandardCharsets/UTF_8)))
 
-(defn- hello-handler [_ write]
-  (write "hello\n")
-  (write tcp/closed))
+(defn- hello-handler
+  ([_state write]
+   (write (->buffer "hello\n"))
+   (write tcp/closed))
+  ([_state _buffer _write])
+  ([_state]))
 
 (deftest server-write-test
   (with-open [_ (tcp/start-server
                  {:port  3457
-                  :watch hello-handler
-                  :write string-write})]
+                  :handler hello-handler})]
     (let [sock (Socket. "localhost" 3457)]
       (with-open [reader (io/reader (.getInputStream sock))]
         (is (= "hello" (.readLine reader)))))))
 
-(defn- string-read [state buf]
+(defn- <-buffer [^ByteBuffer buf]
   (let [b (byte-array (.remaining buf))]
     (.get buf b)
-    (update state :data str (String. b StandardCharsets/UTF_8))))
+    (String. b StandardCharsets/UTF_8)))
 
-(defn- echo-handler [state write]
-  (some-> (:data state) write)
-  (dissoc state :data))
+(defn- echo-handler
+  ([_state _write])
+  ([_state buffer write]
+   (let [s (<-buffer buffer)]
+     (write (->buffer s))))
+  ([_state]))
 
 (deftest server-echo-test
   (with-open [_ (tcp/start-server
                  {:port  3458
-                  :watch echo-handler
-                  :write string-write
-                  :read  string-read})]
+                  :handler echo-handler})]
     (let [sock (Socket. "localhost" 3458)]
       (with-open [writer (io/writer (.getOutputStream sock))]
         (with-open [reader (io/reader (.getInputStream sock))]
@@ -55,7 +58,10 @@
   (let [closed? (promise)]
     (with-open [_ (tcp/start-server
                    {:port  3459
-                    :watch (fn [_ _])
-                    :close (fn [_ _] (deliver closed? true))})]
+                    :handler
+                    (fn
+                      ([_ _])
+                      ([_ _ _])
+                      ([_] (deliver closed? true)))})]
       (.close (Socket. "localhost" 3459))
       (is (deref closed? 100 false)))))

@@ -7,6 +7,8 @@
            [java.util ArrayDeque]
            [java.util.concurrent Executors ExecutorService]))
 
+(def closed (Object.))
+
 (defn- server-socket-channel ^ServerSocketChannel [port]
   (doto (ServerSocketChannel/open)
     (.configureBlocking false)
@@ -28,9 +30,7 @@
 (defn- update-ops [^SelectionKey key f op]
   (.interestOps key (f (.interestOps key) op)))
 
-(def closed (Object.))
-
-(defn- write-buffer [^SelectionKey key buffer]
+(defn- write [^SelectionKey key buffer]
   (-> key .attachment :write-queue (.add buffer))
   (update-ops key bit-or SelectionKey/OP_WRITE))
 
@@ -41,24 +41,23 @@
    :read-buffer (ByteBuffer/allocate buffer-size)})
 
 (defn- handle-accept
-  [^SelectionKey key submit {:keys [write watch] :as opts}]
+  [^SelectionKey key submit {:keys [handler] :as opts}]
   (let [^Selector selector (-> key .selector)
         ^SocketChannel  ch (-> key .channel .accept)]
     (.configureBlocking ch false)
     (let [context (new-context opts)
-          key     (.register ch selector 0 context)
-          writef  #(write % (fn [buf] (write-buffer key buf)))]
-      (submit
-       #(try (vswap! (:read-state context) watch writef)
-             (finally
-               (update-ops key bit-or SelectionKey/OP_READ)
-               (.wakeup selector)))))))
+          key     (.register ch selector 0 context)]
+      (submit (fn []
+                (try (vswap! (:read-state context) handler #(write key %))
+                     (finally
+                       (update-ops key bit-or SelectionKey/OP_READ)
+                       (.wakeup selector))))))))
 
 (defn- handle-close
-  [^SelectionKey key submit ex {:keys [close]}]
+  [^SelectionKey key submit {:keys [handler]}]
   (let [read-state (-> key .attachment :read-state)]
     (-> key .channel .close)
-    (submit #(vswap! read-state close ex))))
+    (submit #(vswap! read-state handler))))
 
 (defn- handle-write [^SelectionKey key submit opts]
   (let [^ArrayDeque queue (-> key .attachment :write-queue)
@@ -72,29 +71,28 @@
                      (.poll queue)
                      (recur))))
              (update-ops key bit-and-not SelectionKey/OP_WRITE)))
-         (catch IOException ex
-           (handle-close key submit ex opts)))))
+         (catch IOException _
+           (handle-close key submit opts)))))
 
 (defn- handle-read
-  [^SelectionKey key submit {:keys [watch read write] :as opts}]
+  [^SelectionKey key submit {:keys [handler] :as opts}]
   (let [{:keys [^ByteBuffer read-buffer read-state]} (.attachment key)
         ^SocketChannel  ch (-> key .channel)
-        ^Selector selector (-> key .selector)
-        writef #(write % (fn [buf] (write-buffer key buf)))]
+        ^Selector selector (-> key .selector)]
     (update-ops key bit-and-not SelectionKey/OP_READ)
     (try
       (if (neg? (.read ch read-buffer))
-        (handle-close key submit nil opts)
+        (handle-close key submit opts)
         (do (.flip read-buffer)
             (submit
-             #(try (vswap! read-state read read-buffer)
-                   (vswap! read-state watch writef)
-                   (finally
-                     (.compact read-buffer)
-                     (update-ops key bit-or SelectionKey/OP_READ)
-                     (.wakeup selector))))))
-      (catch IOException ex
-        (handle-close key submit ex opts)))))
+             (fn []
+               (try (vswap! read-state handler read-buffer #(write key %))
+                    (finally
+                      (.compact read-buffer)
+                      (update-ops key bit-or SelectionKey/OP_READ)
+                      (.wakeup selector)))))))
+      (catch IOException _
+        (handle-close key submit opts)))))
 
 (defn- handle-key [^SelectionKey key submit opts]
   (when (.isValid key)
