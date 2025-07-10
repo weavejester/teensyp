@@ -15,7 +15,7 @@
 
 (defn- hello-handler [_ write]
   (write "hello\n")
-  (write nil))
+  (write tcp/closed))
 
 (deftest server-write-test
   (with-open [_ (tcp/start-server

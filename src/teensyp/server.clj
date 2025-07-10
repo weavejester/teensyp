@@ -28,10 +28,10 @@
 (defn- update-interest [^SelectionKey key f op]
   (.interestOps key (f (.interestOps key) op)))
 
-(def ^:private closed (Object.))
+(def closed (Object.))
 
 (defn- write-buffer [^SelectionKey key buffer]
-  (-> key .attachment :write-queue (.add (or buffer closed)))
+  (-> key .attachment :write-queue (.add buffer))
   (update-interest key bit-or SelectionKey/OP_WRITE))
 
 (defn- new-context [{:keys [init buffer-size]
