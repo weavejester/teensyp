@@ -17,7 +17,7 @@
   (write "hello\n")
   (write nil))
 
-(deftest server-read-test
+(deftest server-write-test
   (with-open [_ (tcp/start-server
                  {:port    3457
                   :handler hello-handler
@@ -25,3 +25,24 @@
     (let [sock (Socket. "localhost" 3457)]
       (with-open [reader (io/reader (.getInputStream sock))]
         (is (= "hello" (.readLine reader)))))))
+
+(defn- string-read [state buf]
+  (let [s (String. (.array buf) StandardCharsets/UTF_8)]
+    (update state :data str s)))
+
+(defn- echo-handler [state write]
+  (some-> (:data state) write)
+  (dissoc state :data))
+
+(deftest server-echo-test
+  (with-open [_ (tcp/start-server
+                 {:port    3458
+                  :handler echo-handler
+                  :write   string-write
+                  :read    string-read})]
+    (let [sock (Socket. "localhost" 3458)]
+      (with-open [writer (io/writer (.getOutputStream sock))]
+        (with-open [reader (io/reader (.getInputStream sock))]
+          (.write writer "foobar\n")
+          (.flush writer)
+          (is (= "foobar" (.readLine reader))))))))

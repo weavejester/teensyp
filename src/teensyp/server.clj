@@ -33,9 +33,11 @@
   (-> key .attachment :write-queue (.add (or buffer closed)))
   (update-interest key bit-or SelectionKey/OP_WRITE))
 
-(defn- new-context [{:keys [init]}]
+(defn- new-context [{:keys [init buffer-size]
+                     :or   {buffer-size 8192}}]
   {:write-queue (ArrayDeque.)
-   :read-state  (volatile! init)})
+   :read-state  (volatile! init)
+   :read-buffer (ByteBuffer/allocate buffer-size)})
 
 (defn- handle-accept
   [^SelectionKey key submit {:keys [write handler] :as opts}]
@@ -51,7 +53,7 @@
                (update-interest key bit-or SelectionKey/OP_READ)
                (.wakeup selector)))))))
 
-(defn- handle-write [^SelectionKey key _opts]
+(defn- handle-write [^SelectionKey key]
   (let [^ArrayDeque queue (-> key .attachment :write-queue)
         ^SocketChannel ch (-> key .channel)]
     (loop []
@@ -64,11 +66,29 @@
                 (recur))))
         (update-interest key bit-and-not SelectionKey/OP_WRITE)))))
 
+(defn- handle-read
+  [^SelectionKey key submit {:keys [handler read write]}]
+  (let [{:keys [^ByteBuffer read-buffer read-state]} (.attachment key)
+        ^SocketChannel  ch (-> key .channel)
+        ^Selector selector (-> key .selector)
+        writef #(write-buffer key (some-> % write))]
+    (update-interest key bit-and-not SelectionKey/OP_READ)
+    (.read ch read-buffer)
+    (.flip read-buffer)
+    (submit
+     #(try (vswap! read-state read read-buffer)
+           (vswap! read-state handler writef)
+           (finally
+             (.compact read-buffer)
+             (update-interest key bit-or SelectionKey/OP_READ)
+             (.wakeup selector))))))
+
 (defn- handle-key [^SelectionKey key submit opts]
   (when (.isValid key)
     (cond
       (.isAcceptable key) (handle-accept key submit opts)
-      (.isWritable key)   (handle-write key opts))))
+      (.isReadable key)   (handle-read key submit opts)
+      (.isWritable key)   (handle-write key))))
 
 (defn- server-loop
   [^ServerSocketChannel server-ch ^Selector selector
