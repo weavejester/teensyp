@@ -1,5 +1,6 @@
 (ns teensyp.server
-  (:import [java.net InetSocketAddress]
+  (:import [java.io IOException]
+           [java.net InetSocketAddress]
            [java.nio ByteBuffer]
            [java.nio.channels Selector SelectionKey
             ServerSocketChannel SocketChannel]
@@ -59,18 +60,20 @@
     (-> key .channel .close)
     (submit #(vswap! read-state close ex))))
 
-(defn- handle-write [^SelectionKey key]
+(defn- handle-write [^SelectionKey key submit opts]
   (let [^ArrayDeque queue (-> key .attachment :write-queue)
         ^SocketChannel ch (-> key .channel)]
-    (loop []
-      (if-some [buffer (.peek queue)]
-        (if (identical? buffer closed)
-          (.close ch)
-          (do (.write ch ^ByteBuffer buffer)
-              (when-not (.hasRemaining ^ByteBuffer buffer)
-                (.poll queue)
-                (recur))))
-        (update-interest key bit-and-not SelectionKey/OP_WRITE)))))
+    (try (loop []
+           (if-some [buffer (.peek queue)]
+             (if (identical? buffer closed)
+               (.close ch)
+               (do (.write ch ^ByteBuffer buffer)
+                   (when-not (.hasRemaining ^ByteBuffer buffer)
+                     (.poll queue)
+                     (recur))))
+             (update-interest key bit-and-not SelectionKey/OP_WRITE)))
+         (catch IOException ex
+           (handle-close key submit ex opts)))))
 
 (defn- handle-read
   [^SelectionKey key submit {:keys [handler read write] :as opts}]
@@ -90,7 +93,7 @@
                      (.compact read-buffer)
                      (update-interest key bit-or SelectionKey/OP_READ)
                      (.wakeup selector))))))
-      (catch java.io.IOException ex
+      (catch IOException ex
         (handle-close key submit ex opts)))))
 
 (defn- handle-key [^SelectionKey key submit opts]
@@ -98,7 +101,7 @@
     (cond
       (.isAcceptable key) (handle-accept key submit opts)
       (.isReadable key)   (handle-read key submit opts)
-      (.isWritable key)   (handle-write key))))
+      (.isWritable key)   (handle-write key submit opts))))
 
 (defn- server-loop
   [^ServerSocketChannel server-ch ^Selector selector
