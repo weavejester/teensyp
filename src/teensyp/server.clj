@@ -7,7 +7,10 @@
            [java.util ArrayDeque]
            [java.util.concurrent Executors ExecutorService]))
 
-(def closed (Object.))
+(def closed
+  "A unique object that can be passed to the write function of a handler
+  in order to close the connection."
+  (Object.))
 
 (defn- server-socket-channel ^ServerSocketChannel [port]
   (doto (ServerSocketChannel/open)
@@ -119,6 +122,27 @@
     (Executors/newFixedThreadPool (+ 2 processors))))
 
 (defn start-server
+  "Start a TCP server with the supplied map of options:
+
+  - `:port` - the port number to listen on (mandatory)
+  - `:handler` - a handler function (mandatory, see below)
+  - `:executor` - a custom ExecutorService to supply worker threads
+  - `:buffer-size` - the buffer size in bytes (default 8K)
+
+  The handler function must have three arities:
+
+      (fn handler
+        ([state write] state)         ;; on accept
+        ([state buffer write] state)  ;; on read
+        ([state] state))              ;; on close
+
+  The `buffer` is a java.nio.ByteBuffer instance, and `write` is a function
+  that takes a buffer as an argument and will queue it to send to the client.
+  To close the channel, pass `teensyp.server/closed` to the write function.
+
+  The `state` is a custom data structure that is returned when the accept or
+  read arities are triggered. A different state is associated with each
+  connection."
   [{:keys [port executor] :as opts}]
   {:pre [(int? port)]}
   (let [server-ch (server-socket-channel port)
