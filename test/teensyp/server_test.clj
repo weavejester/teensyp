@@ -27,8 +27,9 @@
         (is (= "hello" (.readLine reader)))))))
 
 (defn- string-read [state buf]
-  (let [s (String. (.array buf) StandardCharsets/UTF_8)]
-    (update state :data str s)))
+  (let [b (byte-array (.remaining buf))]
+    (.get buf b)
+    (update state :data str (String. b StandardCharsets/UTF_8))))
 
 (defn- echo-handler [state write]
   (some-> (:data state) write)
@@ -43,8 +44,11 @@
     (let [sock (Socket. "localhost" 3458)]
       (with-open [writer (io/writer (.getOutputStream sock))]
         (with-open [reader (io/reader (.getInputStream sock))]
-          (.write writer "foobar\n")
-          (.flush writer)
+          (doto writer (.write "foo\n") .flush)
+          (is (= "foo" (.readLine reader)))
+          (doto writer (.write "bar\n") .flush)
+          (is (= "bar" (.readLine reader)))
+          (doto writer (.write "foo") (.write "bar\n") .flush)
           (is (= "foobar" (.readLine reader))))))))
 
 (deftest server-socket-close-test
