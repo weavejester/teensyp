@@ -13,7 +13,7 @@
 
 (defn- hello-handler
   ([write]
-   (write (buf/str->buffer "hello\n"))
+   (write (buf/str->buffer "hello\n" StandardCharsets/US_ASCII))
    (write tcp/closed))
   ([_state _buffer _write])
   ([_state _exception]))
@@ -29,13 +29,13 @@
 (defn- <-buffer [^ByteBuffer buf]
   (let [b (byte-array (.remaining buf))]
     (.get buf b)
-    (String. b StandardCharsets/UTF_8)))
+    (String. b StandardCharsets/US_ASCII)))
 
 (defn- echo-handler
   ([_write])
   ([_state buffer write]
    (let [s (<-buffer buffer)]
-     (write (buf/str->buffer s))))
+     (write (buf/str->buffer s StandardCharsets/US_ASCII))))
   ([_state _exception]))
 
 (deftest server-echo-test

@@ -10,10 +10,8 @@
 
 (defn str->buffer
   "Convert a String into a ByteBuffer."
-  (^ByteBuffer [^String s]
-   (str->buffer s StandardCharsets/UTF_8))
-  (^ByteBuffer [^String s ^Charset charset]
-   (ByteBuffer/wrap (.getBytes s charset))))
+  ^ByteBuffer [^String s ^Charset charset]
+  (ByteBuffer/wrap (.getBytes s charset)))
 
 (defn index-of
   "Find the first index of the specified byte in a buffer."
