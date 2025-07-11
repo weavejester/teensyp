@@ -38,3 +38,16 @@
   (let [buf (ByteBuffer/wrap (.getBytes "hello" ascii))]
     (is (nil? (buf/read-line buf StandardCharsets/UTF_8)))
     (is (= 0 (.position buf)))))
+
+(deftest copy-test
+  (let [buf (buf/buffer 5)]
+    (buf/copy (buf/str->buffer "hello" ascii) buf)
+    (is (= [104 101 108 108 111] (seq (.array buf)))))
+  (let [buf (buf/buffer 5)]
+    (buf/copy (buf/str->buffer "hello:world" ascii) buf)
+    (is (= [104 101 108 108 111] (seq (.array buf)))))
+  (let [buf (buf/buffer 5)]
+    (buf/copy (buf/str->buffer "hel" ascii) buf)
+    (is (= [104 101 108 0 0] (seq (.array buf))))
+    (buf/copy (buf/str->buffer "lo:world" ascii) buf)
+    (is (= [104 101 108 108 111] (seq (.array buf))))))
