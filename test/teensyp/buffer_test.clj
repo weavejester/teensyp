@@ -2,7 +2,7 @@
   (:require [clojure.test :refer [deftest is]]
             [teensyp.buffer :as buf])
   (:import [java.nio ByteBuffer]
-           [java.nio.charset Charset StandardCharsets]))
+           [java.nio.charset StandardCharsets]))
 
 (def ascii StandardCharsets/US_ASCII)
 
