@@ -14,7 +14,44 @@ Or to your Leiningen project file:
 
 ## Usage
 
-FIXME
+At minimum, TeensyP requires a port to listen on and a handler function:
+
+```clojure
+(require '[teensyp.server :as tcp])
+
+(tcp/start-server {:port 3000, :handler demo-handler})```
+```
+
+The handler function has three arities, and defines how the server
+behaves.
+
+```clojure
+(import 'java.nio.ByteBuffer)
+
+(defn demo-handler
+  ([write]
+   ;; With 1 argument, we can write ByteBuffers via the write function.
+   ;; The return value is the channel's state.
+   {:read-bytes 0})
+  ([state ^ByteBuffer buffer write]
+   ;; With 3 arguments, we handle read data stored in a ByteBuffer. We
+   ;; can update the channel's state by returning a new value, and write
+   ;; to the output channel with the write function.
+   (update state :read-bytes + (.remaining buffer)))
+  ([state exception]
+   ;; With 2 arguments, we have the channel closing. If it closed due to an
+   ;; exception, that exception is passed as the second argument, otherwise it
+   ;; will be nil.
+  ))
+```
+
+The handler maintains a `state`, which can be any Clojure data
+structure, but is usually a map. This state is unique to the channel,
+and is updated each time the channel is read from by the 3-arity form of
+the handler.
+
+The handler is guaranteed to be called sequentially for the same
+channel.
 
 ## License
 
