@@ -1,4 +1,5 @@
 (ns teensyp.buffer
+  (:refer-clojure :exclude [read-line])
   (:import [java.nio ByteBuffer]
            [java.nio.charset Charset StandardCharsets]))
 
@@ -46,3 +47,19 @@
           (if (< i end)
             (recur (inc i))
             -1))))))
+
+(defn read-line
+  "Return the next line from the buffer, or nil if the buffer has no LF. Strips
+  ending CR and LF characters from the resulting string. If a string is
+  returned, the buffer's position is advanced accordingly."
+  [^ByteBuffer buffer ^Charset charset]
+  (let [CR 0x0D, LF 0x0A
+        index (index-of buffer LF)]
+    (when (not= index -1)
+      (let [len (if (= CR (.get buffer (dec index)))
+                  (dec index)
+                  index)
+            bs  (byte-array len)]
+        (.get buffer bs)
+        (.position buffer (inc index))
+        (String. bs charset)))))
