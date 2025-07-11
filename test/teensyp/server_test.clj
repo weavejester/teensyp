@@ -14,7 +14,7 @@
 (defn- hello-handler
   ([write]
    (write (buf/str->buffer "hello\n" StandardCharsets/US_ASCII))
-   (write tcp/closed))
+   (write tcp/CLOSE))
   ([_state _buffer _write])
   ([_state _exception]))
 

@@ -7,8 +7,8 @@
            [java.util ArrayDeque]
            [java.util.concurrent Executors ExecutorService]))
 
-(def closed
-  "A unique object that can be passed to the write function of a handler
+(def CLOSE
+  "A unique identifier that can be passed to the write function of a handler
   in order to close the connection."
   (Object.))
 
@@ -66,7 +66,7 @@
         ^SocketChannel ch (-> key .channel)]
     (try (loop []
            (if-some [buffer (.peek queue)]
-             (if (identical? buffer closed)
+             (if (identical? buffer CLOSE)
                (.close ch)
                (do (.write ch ^ByteBuffer buffer)
                    (when-not (.hasRemaining ^ByteBuffer buffer)
@@ -137,7 +137,7 @@
 
   The `buffer` is a java.nio.ByteBuffer instance, and `write` is a function
   that takes a buffer as an argument and will queue it to send to the client.
-  To close the channel, pass `teensyp.server/closed` to the write function.
+  To close the channel, pass `teensyp.server/CLOSE` to the write function.
 
   The `state` is a custom data structure that is returned when the accept or
   read arities are triggered. A different state is associated with each
