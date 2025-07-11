@@ -14,15 +14,26 @@
   (^ByteBuffer [^String s ^Charset charset]
    (ByteBuffer/wrap (.getBytes s charset))))
 
-(defn- matches-bytes? [^ByteBuffer buffer index ^bytes needle]
+(defn index-of
+  "Find the first index of the specified byte in a buffer."
+  [^ByteBuffer buffer needle]
+  (let [len (.remaining buffer)]
+    (loop [index 0]
+      (if (< index len)
+        (if (= needle (.get buffer index))
+          index
+          (recur (inc index)))
+        -1))))
+
+(defn- matches-tail-bytes? [^ByteBuffer buffer index ^bytes needle]
   (loop [i (inc index), j 1]
     (if (< j (alength needle))
       (when (= (.get buffer i) (aget needle j))
         (recur (inc i) (inc j)))
       true)))
 
-(defn index-of-bytes
-  "Find an array of bytes within a buffer."
+(defn index-of-array
+  "Find the first index of the specified array of bytes within a buffer."
   [^ByteBuffer buffer ^bytes needle]
   (if (zero? (alength needle))
     -1
@@ -30,7 +41,7 @@
           end (- (.remaining buffer) (alength needle) 1)]
       (loop [i 0]
         (if (and (= b (.get buffer i))
-                 (matches-bytes? buffer i needle))
+                 (matches-tail-bytes? buffer i needle))
           i
           (if (< i end)
             (recur (inc i))

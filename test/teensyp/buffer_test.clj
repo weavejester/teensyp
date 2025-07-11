@@ -10,9 +10,14 @@
   (is (= [104 101 108 108 111]
          (seq (.array (buf/str->buffer "hello"))))))
 
-(deftest index-of-bytes-test
+(deftest index-of-test
+  (let [bs (byte-array [104 101 108 108 111])]
+    (is (= 2 (-> (ByteBuffer/wrap bs) (buf/index-of 108))))
+    (is (= -1 (-> (ByteBuffer/wrap bs) (buf/index-of 112))))))
+
+(deftest index-of-array-test
   (let [bs (byte-array [104 101 108 108 111])]
     (is (= 2 (-> (ByteBuffer/wrap bs)
-                 (buf/index-of-bytes (byte-array [108 108])))))
+                 (buf/index-of-array (byte-array [108 108])))))
     (is (= -1 (-> (ByteBuffer/wrap bs)
-                  (buf/index-of-bytes (byte-array [111 108])))))))
+                  (buf/index-of-array (byte-array [111 108])))))))
