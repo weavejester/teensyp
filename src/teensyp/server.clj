@@ -180,7 +180,11 @@
   connection.
 
   When closing, the `exception` may contain the exception that terminated the
-  channel, or `nil` if the channel were terminated gracefully."
+  channel, or `nil` if the channel were terminated gracefully.
+
+  The handler function is guaranteed to execute in serial per channel. That is,
+  the accept will always be first, the close will always be last, and reads
+  will always be sequential."
   [{:keys [port executor] :as opts}]
   {:pre [(int? port)]}
   (let [server-ch (server-socket-channel port)
