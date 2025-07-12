@@ -12,6 +12,16 @@
   in order to close the connection."
   (Object.))
 
+(def PAUSE-READS
+  "A unique identifier that can be passed to the write function of a handler
+  in order to pause reads. See: RESUME-READS."
+  (Object.))
+
+(def RESUME-READS
+  "A unique identifier that can be passed to the write function of a handler
+  in order to pause reads. See: RESUME-READS."
+  (Object.))
+
 (defn- server-socket-channel ^ServerSocketChannel [port]
   (doto (ServerSocketChannel/open)
     (.configureBlocking false)
@@ -35,14 +45,16 @@
 
 (defn- write [^SelectionKey key buffer]
   (-> key .attachment :write-queue (.add buffer))
-  (update-ops key bit-or SelectionKey/OP_WRITE))
+  (update-ops key bit-or SelectionKey/OP_WRITE)
+  (-> key .selector .wakeup))
 
 (defn- new-context [{:keys [buffer-size] :or {buffer-size 8192}}]
   {:write-queue (ArrayDeque.)
    :state       (volatile! nil)
    :read-buffer (ByteBuffer/allocate buffer-size)
    :working?    (atom false)
-   :closef      (volatile! nil)})
+   :closef      (volatile! nil)
+   :paused?     (volatile! false)})
 
 (defn- close-key [^SelectionKey key submit ex handler]
   (let [state (-> key .attachment :state)]
@@ -71,13 +83,23 @@
                        (update-ops key bit-or SelectionKey/OP_READ)
                        (.wakeup selector))))))))
 
+(defn- pause-key [^SelectionKey key]
+  (vreset! (-> key .attachment :paused?) true)
+  (update-ops key bit-and-not SelectionKey/OP_READ))
+
+(defn- resume-key [^SelectionKey key]
+  (vreset! (-> key .attachment :paused?) false)
+  (update-ops key bit-or SelectionKey/OP_READ))
+
 (defn- handle-write [^SelectionKey key submit opts]
   (let [^ArrayDeque queue (-> key .attachment :write-queue)
         ^SocketChannel ch (-> key .channel)]
     (try (loop []
            (if-some [buffer (.peek queue)]
-             (if (identical? buffer CLOSE)
-               (.close ch)
+             (condp identical? buffer
+               CLOSE        (.close ch)
+               PAUSE-READS  (do (pause-key key)  (.poll queue) (recur))
+               RESUME-READS (do (resume-key key) (.poll queue) (recur))
                (do (.write ch ^ByteBuffer buffer)
                    (when-not (.hasRemaining ^ByteBuffer buffer)
                      (.poll queue)
@@ -113,8 +135,10 @@
   (when (.isValid key)
     (cond
       (.isAcceptable key) (handle-accept key submit opts)
-      (.isReadable key)   (handle-read key submit opts)
-      (.isWritable key)   (handle-write key submit opts))))
+      (.isWritable key)   (handle-write key submit opts)
+      (.isReadable key)   (if (-> key .attachment :paused? deref)
+                            (update-ops key bit-and-not SelectionKey/OP_READ)
+                            (handle-read key submit opts)))))
 
 ;; The handler is called when accepting, reading and closing a socket channel,
 ;; and is always run within a worker thread assigned by the executor.
