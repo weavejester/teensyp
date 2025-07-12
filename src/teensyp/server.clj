@@ -5,7 +5,8 @@
            [java.nio.channels Selector SelectionKey
             ServerSocketChannel SocketChannel]
            [java.util ArrayDeque]
-           [java.util.concurrent Executors ExecutorService]))
+           [java.util.concurrent Executors ExecutorService]
+           [java.util.concurrent.atomic AtomicBoolean]))
 
 (def CLOSE
   "A unique identifier that can be passed to the write function of a handler
@@ -40,26 +41,38 @@
 (defn- new-context [{:keys [buffer-size] :or {buffer-size 8192}}]
   {:write-queue (ArrayDeque.)
    :state       (volatile! nil)
-   :read-buffer (ByteBuffer/allocate buffer-size)})
+   :read-buffer (ByteBuffer/allocate buffer-size)
+   :reading?    (AtomicBoolean. false)
+   :close-error (promise)})
+
+(defn- close-key
+  [^SelectionKey key submit ex {:keys [handler]}]
+  (let [state (-> key .attachment :state)]
+    (submit #(vswap! state handler ex))))
 
 (defn- handle-accept
   [^SelectionKey key submit {:keys [handler] :as opts}]
   (let [^Selector selector (-> key .selector)
         ^SocketChannel  ch (-> key .channel .accept)]
     (.configureBlocking ch false)
-    (let [{:keys [state] :as context} (new-context opts)
+    (let [{:keys [state reading?] :as context} (new-context opts)
           key (.register ch selector 0 context)]
+      (.set reading? true)
       (submit (fn []
                 (try (vreset! state (handler #(write key %)))
                      (finally
+                       (when-not (.compareAndSet reading? true false)
+                         (let [ex (-> key .attachment :close-error)]
+                           (close-key key submit @ex opts)))
                        (update-ops key bit-or SelectionKey/OP_READ)
                        (.wakeup selector))))))))
 
-(defn- handle-close
-  [^SelectionKey key submit ex {:keys [handler]}]
-  (let [state (-> key .attachment :state)]
-    (-> key .channel .close)
-    (submit #(vswap! state handler ex))))
+(defn- handle-close [^SelectionKey key submit ex opts]
+  (-> key .channel .close)
+  (let [{:keys [^AtomicBoolean reading? close-error]} (.attachment key)]
+    (if (.compareAndSet reading? true false)
+      (deliver close-error ex)
+      (close-key key submit ex opts))))
 
 (defn- handle-write [^SelectionKey key submit opts]
   (let [^ArrayDeque queue (-> key .attachment :write-queue)
@@ -78,18 +91,22 @@
 
 (defn- handle-read
   [^SelectionKey key submit {:keys [handler] :as opts}]
-  (let [{:keys [^ByteBuffer read-buffer state]} (.attachment key)
+  (let [{:keys [^ByteBuffer read-buffer state reading?]} (.attachment key)
         ^SocketChannel  ch (-> key .channel)
         ^Selector selector (-> key .selector)]
     (update-ops key bit-and-not SelectionKey/OP_READ)
     (try
       (if (neg? (.read ch read-buffer))
-        (handle-close key submit nil opts)
-        (do (.flip read-buffer)
+        (close-key key submit nil opts)
+        (do (.set reading? true)
+            (.flip read-buffer)
             (submit
              (fn []
                (try (vswap! state handler read-buffer #(write key %))
                     (finally
+                      (when-not (.compareAndSet reading? true false)
+                        (let [ex (-> key .attachment :close-error)]
+                          (close-key key submit @ex opts)))
                       (.compact read-buffer)
                       (update-ops key bit-or SelectionKey/OP_READ)
                       (.wakeup selector)))))))

@@ -11,9 +11,12 @@
   (with-open [server (tcp/start-server {:port 3456})]
     (is (instance? java.io.Closeable server))))
 
+(defn ->buffer [s]
+  (buf/str->buffer s StandardCharsets/US_ASCII))
+
 (defn- hello-handler
   ([write]
-   (write (buf/str->buffer "hello\n" StandardCharsets/US_ASCII))
+   (write (->buffer "hello\n"))
    (write tcp/CLOSE))
   ([_state _buffer _write])
   ([_state _exception]))
@@ -35,7 +38,7 @@
   ([_write])
   ([_state buffer write]
    (let [s (<-buffer buffer)]
-     (write (buf/str->buffer s StandardCharsets/US_ASCII))))
+     (write (->buffer s))))
   ([_state _exception]))
 
 (deftest server-echo-test
@@ -68,17 +71,14 @@
   ([_write])
   ([_state buffer write]
    (when-some [line (buf/read-line buffer StandardCharsets/US_ASCII)]
-     (-> (apply str (reverse line))
-         (str "\r\n")
-         (buf/str->buffer StandardCharsets/US_ASCII)
-         (write))))
+     (-> (apply str (reverse line)) (str "\r\n") ->buffer write)))
   ([_state _ex]))
 
 (deftest server-readline-test
   (with-open [_ (tcp/start-server
                  {:port 3460
                   :handler reverse-line-handler})]
-    (let [sock (Socket. "localhost" 3460)]
+    (with-open [sock (Socket. "localhost" 3460)]
       (with-open [writer (io/writer (.getOutputStream sock))]
         (with-open [reader (io/reader (.getInputStream sock))]
           (doto writer (.write "foo\r\n") .flush)
@@ -87,3 +87,25 @@
           (is (= "rab" (.readLine reader)))
           (doto writer (.write "foo") (.write "bar\r\n") .flush)
           (is (= "raboof" (.readLine reader))))))))
+
+(deftest server-ordering-test
+  (let [messages (promise)]
+    (with-open [_ (tcp/start-server
+                   {:port 3461
+                    :handler
+                    (fn
+                      ([_] [])
+                      ([state buf write]
+                       (Thread/sleep 20)
+                       (write (->buffer "ack"))
+                       (conj state (<-buffer buf)))
+                      ([state _]
+                       (deliver messages (conj state :close))))})]
+      (with-open [sock (Socket. "localhost" 3461)]
+        (.setSoLinger sock true 0)  ; abrupt disconnect
+        (with-open [writer (io/writer (.getOutputStream sock))]
+          (doto writer (.write "foo") .flush)
+          (Thread/sleep 10)
+          (doto writer (.write "bar") .flush)
+          (Thread/sleep 30)))
+      (is (= ["foo" "bar" :close] (deref messages 100 :timeout))))))
