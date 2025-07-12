@@ -6,11 +6,11 @@ A small Clojure TCP server.
 
 Add the following dependency to your deps.edn file:
 
-    dev.weavejester/teensyp {:mvn/version "0.1.0-SNAPSHOT"}
+    dev.weavejester/teensyp {:mvn/version "0.1.0"}
 
 Or to your Leiningen project file:
 
-    [dev.weavejester/teensyp "0.1.0-SNAPSHOT"]
+    [dev.weavejester/teensyp "0.1.0"]
 
 ## Usage
 
