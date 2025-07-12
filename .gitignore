@@ -11,3 +11,4 @@ pom.xml.asc
 /.prepl-port
 /.cpcache
 /.clj-kondo
+/codox
