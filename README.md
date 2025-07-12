@@ -1,6 +1,6 @@
 # TeensyP [![Build Status](https://github.com/weavejester/teensyp/actions/workflows/test.yml/badge.svg)](https://github.com/weavejester/teensyp/actions/workflows/test.yml)
 
-A small Clojure TCP server.
+A small, zero-dependency Clojure TCP server that uses Java NIO.
 
 ## Installation
 
