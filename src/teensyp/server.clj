@@ -117,6 +117,28 @@
       (.isReadable key)   (handle-read key submit opts)
       (.isWritable key)   (handle-write key submit opts))))
 
+;; The handler is called when accepting, reading and closing a socket channel,
+;; and is always run within a worker thread assigned by the executor.
+;;
+;; Before an accept or read, the selector is told to ignore future reads for
+;; the associated selection key. When the handler has completed, reads are
+;; turned back on for the key. This ensures that the selector cannot start a
+;; new read for the key until the existing one completes.
+;;
+;; Also before an accept or read, the :working? atom is set to true. When the
+;; handler completes, it is set to false. If the channel needs to close
+;; suddenly, the :working? atom is checked. If it's true, then the handler is
+;; working; the close handler is queued and :working? is set to false. This
+;; indicates to the worker thread that the close handler needs to be run after
+;; it. Otherwise, the close handler is run immediately.
+;;
+;; The close event is always triggered from the main server thread, so worker
+;; threads running the handler are our only concern. We use compare-and-set!
+;; to atomically decide whether to run the close handler immediately or queue
+;; it to be run after the worker thread. The queued close handler uses a
+;; volatile because we know it will only be read after the :working? atom
+;; is set, so no two threads have simultaneous access.
+
 (defn- server-loop
   [^ServerSocketChannel server-ch ^Selector selector
    ^ExecutorService executor opts]
