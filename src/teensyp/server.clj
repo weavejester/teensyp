@@ -5,8 +5,7 @@
            [java.nio.channels Selector SelectionKey
             ServerSocketChannel SocketChannel]
            [java.util ArrayDeque]
-           [java.util.concurrent Executors ExecutorService]
-           [java.util.concurrent.atomic AtomicBoolean]))
+           [java.util.concurrent Executors ExecutorService]))
 
 (def CLOSE
   "A unique identifier that can be passed to the write function of a handler
