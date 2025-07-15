@@ -51,9 +51,9 @@ and is updated each time the channel is read from by the 3-arity form of
 the handler.
 
 The handler is guaranteed to be called sequentially for the same
-channel. That is, the 1-arity accept is always first, then 2-arity close
-is always last, and each handler call must finish before the next
-begins.
+channel. That is, the 1-arity accept is always first, the 2-arity close
+is always last, and each handler call for the same channel must finish
+before the next begins.
 
 The `write` function accepts a single `ByteBuffer` argument, or one of
 three special marker objects:
@@ -61,6 +61,9 @@ three special marker objects:
 - `teensyp.server/CLOSE`        - closes the channel
 - `teensyp.server/PAUSE-READS`  - pause reads until resumed
 - `teensyp.server/RESUME-READS` - resume reads
+
+You may also specify a second argument to `write`. This is a zero
+argument callback function that will be called when the write completes.
 
 ## Documentation
 

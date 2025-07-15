@@ -231,6 +231,13 @@
   that takes a buffer as an argument and will queue it to send to the client.
   To close the channel, pass `teensyp.server/CLOSE` to the write function.
 
+  The write function may also take `teensyp.server/PAUSE-READS` and
+  `teensyp.server/RESUME-READS`. These will pause and resume reads calls
+  respectively.
+
+  You may optionally specify a second argument to `write`. This is should be
+  a zero-argument callback function, which is called after the write completes.
+
   The `state` is a custom data structure that is returned when the accept or
   read arities are triggered. A different state is associated with each
   connection.
