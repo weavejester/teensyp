@@ -43,10 +43,13 @@
 (defn- update-ops [^SelectionKey key f op]
   (.interestOps key (f (.interestOps key) op)))
 
-(defn- write [^SelectionKey key buffer]
-  (-> key .attachment :write-queue (.add buffer))
-  (update-ops key bit-or SelectionKey/OP_WRITE)
-  (-> key .selector .wakeup))
+(defn- writer [^SelectionKey key]
+  (fn write
+    ([buffer] (write buffer nil))
+    ([buffer callback]
+     (-> key .attachment :write-queue (.add [buffer callback]))
+     (update-ops key bit-or SelectionKey/OP_WRITE)
+     (-> key .selector .wakeup))))
 
 (defn- new-context [{:keys [buffer-size] :or {buffer-size 8192}}]
   {:write-queue (ArrayDeque.)
@@ -75,13 +78,12 @@
     (let [{:keys [state working?] :as context} (new-context opts)
           key (.register ch selector 0 context)]
       (reset! working? true)
-      (submit (fn []
-                (try (vreset! state (handler #(write key %)))
-                     (finally
-                       (when-not (compare-and-set! working? true false)
-                         (@(-> key .attachment :closef)))
-                       (update-ops key bit-or SelectionKey/OP_READ)
-                       (.wakeup selector))))))))
+      (submit #(try (vreset! state (handler (writer key)))
+                    (finally
+                      (when-not (compare-and-set! working? true false)
+                        (@(-> key .attachment :closef)))
+                      (update-ops key bit-or SelectionKey/OP_READ)
+                      (.wakeup selector)))))))
 
 (defn- pause-key [^SelectionKey key]
   (vreset! (-> key .attachment :paused?) true)
@@ -95,14 +97,21 @@
   (let [^ArrayDeque queue (-> key .attachment :write-queue)
         ^SocketChannel ch (-> key .channel)]
     (try (loop []
-           (if-some [buffer (.peek queue)]
+           (if-some [[buffer callback] (.peek queue)]
              (condp identical? buffer
                CLOSE        (.close ch)
-               PAUSE-READS  (do (pause-key key)  (.poll queue) (recur))
-               RESUME-READS (do (resume-key key) (.poll queue) (recur))
+               PAUSE-READS  (do (pause-key key)
+                                (.poll queue)
+                                (some-> callback submit)
+                                (recur))
+               RESUME-READS (do (resume-key key)
+                                (.poll queue)
+                                (some-> callback submit)
+                                (recur))
                (do (.write ch ^ByteBuffer buffer)
                    (when-not (.hasRemaining ^ByteBuffer buffer)
                      (.poll queue)
+                     (some-> callback submit)
                      (recur))))
              (update-ops key bit-and-not SelectionKey/OP_WRITE)))
          (catch IOException ex
@@ -119,15 +128,13 @@
         (handle-close key submit nil opts)
         (do (.flip read-buffer)
             (reset! working? true)
-            (submit
-             (fn []
-               (try (vswap! state handler read-buffer #(write key %))
-                    (finally
-                      (when-not (compare-and-set! working? true false)
-                        (@(-> key .attachment :closef)))
-                      (.compact read-buffer)
-                      (update-ops key bit-or SelectionKey/OP_READ)
-                      (.wakeup selector)))))))
+            (submit #(try (vswap! state handler read-buffer (writer key))
+                          (finally
+                            (when-not (compare-and-set! working? true false)
+                              (@(-> key .attachment :closef)))
+                            (.compact read-buffer)
+                            (update-ops key bit-or SelectionKey/OP_READ)
+                            (.wakeup selector))))))
       (catch IOException ex
         (handle-close key submit ex opts)))))
 

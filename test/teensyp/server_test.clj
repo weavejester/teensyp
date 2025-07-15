@@ -132,3 +132,20 @@
           (@write-ref tcp/RESUME-READS)
           (Thread/sleep 20)
           (is (= 2 @read-count)))))))
+
+(deftest server-write-callback-test
+  (with-open [_ (tcp/start-server
+                 {:port 3463
+                  :handler
+                  (fn
+                    ([write]
+                     (write (->buffer "foo")
+                            (fn []
+                              (write (->buffer "bar")
+                                     (fn []
+                                       (write (->buffer "\r\n")))))))
+                    ([_ _ _])
+                    ([_ _]))})]
+    (with-open [sock (Socket. "localhost" 3463)]
+      (with-open [reader (io/reader (.getInputStream sock))]
+        (is (= "foobar" (.readLine reader)))))))
