@@ -4,8 +4,9 @@
            [java.nio ByteBuffer]
            [java.nio.channels Selector SelectionKey
             ServerSocketChannel SocketChannel]
-           [java.util ArrayDeque]
-           [java.util.concurrent Executors ExecutorService]))
+           [java.util Queue]
+           [java.util.concurrent ArrayBlockingQueue Executors ExecutorService]
+           [java.util.concurrent.atomic AtomicInteger]))
 
 (def CLOSE
   "A unique identifier that can be passed to the write function of a handler
@@ -43,18 +44,42 @@
 (defn- update-ops [^SelectionKey key f op]
   (.interestOps key (f (.interestOps key) op)))
 
+(defn- ex-write-queue-full []
+  (ex-info "Write queue full" {:err ::write-queue-full}))
+
+(defn- ex-write-queue-over-capacity []
+  (ex-info "Write queue over capacity" {:err ::write-queue-over-capacity}))
+
+(defn- update-write-limit
+  [^AtomicInteger limit ^ByteBuffer buffer]
+  (let [remaining (.remaining buffer)]
+    (when (> remaining (.getAndAdd limit (- remaining)))
+      (.getAndAdd limit remaining)
+      (throw (ex-write-queue-over-capacity)))))
+
 (defn- writer [^SelectionKey key]
   (fn write
     ([buffer] (write buffer nil))
     ([buffer callback]
-     (-> key .attachment :write-queue (.add [buffer callback]))
-     (update-ops key bit-or SelectionKey/OP_WRITE)
-     (-> key .selector .wakeup))))
+     (let [{:keys [^ArrayBlockingQueue write-queue write-limit]}
+           (.attachment key)]
+       (when (zero? (.remainingCapacity write-queue))
+         (throw (ex-write-queue-full)))
+       (when (instance? ByteBuffer buffer)
+         (update-write-limit write-limit buffer))
+       (.add write-queue [buffer callback])
+       (update-ops key bit-or SelectionKey/OP_WRITE)
+       (-> key .selector .wakeup)))))
 
-(defn- new-context [{:keys [buffer-size] :or {buffer-size 8192}}]
-  {:write-queue (ArrayDeque.)
+(defn- new-context
+  [{:keys [read-buffer-size write-buffer-size write-queue-size]
+    :or   {read-buffer-size  8192
+           write-buffer-size 32768
+           write-queue-size  64}}]
+  {:write-queue (ArrayBlockingQueue. write-queue-size)
+   :write-limit (AtomicInteger. write-buffer-size)
    :state       (volatile! nil)
-   :read-buffer (ByteBuffer/allocate buffer-size)
+   :read-buffer (ByteBuffer/allocate read-buffer-size)
    :working?    (atom false)
    :closef      (volatile! nil)
    :paused?     (volatile! false)})
@@ -94,23 +119,24 @@
   (update-ops key bit-or SelectionKey/OP_READ))
 
 (defn- handle-write [^SelectionKey key submit opts]
-  (let [^ArrayDeque queue (-> key .attachment :write-queue)
+  (let [{:keys [^Queue         write-queue
+                ^AtomicInteger write-limit]} (.attachment key)
         ^SocketChannel ch (-> key .channel)]
     (try (loop []
-           (if-some [[buffer callback] (.peek queue)]
+           (if-some [[buffer callback] (.peek write-queue)]
              (condp identical? buffer
                CLOSE        (.close ch)
                PAUSE-READS  (do (pause-key key)
-                                (.poll queue)
+                                (.poll write-queue)
                                 (some-> callback submit)
                                 (recur))
                RESUME-READS (do (resume-key key)
-                                (.poll queue)
+                                (.poll write-queue)
                                 (some-> callback submit)
                                 (recur))
-               (do (.write ch ^ByteBuffer buffer)
+               (do (.getAndAdd write-limit (.write ch ^ByteBuffer buffer))
                    (when-not (.hasRemaining ^ByteBuffer buffer)
-                     (.poll queue)
+                     (.poll write-queue)
                      (some-> callback submit)
                      (recur))))
              (update-ops key bit-and-not SelectionKey/OP_WRITE)))

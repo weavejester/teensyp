@@ -149,3 +149,28 @@
     (with-open [sock (Socket. "localhost" 3463)]
       (with-open [reader (io/reader (.getInputStream sock))]
         (is (= "foobar" (.readLine reader)))))))
+
+(deftest server-write-limit-test
+  (let [exceptions (atom [])]
+    (with-open [_ (tcp/start-server
+                   {:port 3464
+                    :write-buffer-size 4
+                    :write-queue-size 2
+                    :handler
+                    (fn
+                      ([write]
+                       (try (write (->buffer "toobig\n"))
+                            (catch Exception ex (swap! exceptions conj ex)))
+                       (try (write (->buffer "1\n"))
+                            (write (->buffer "2\n"))
+                            (write (->buffer "3\n"))
+                            (catch Exception ex (swap! exceptions conj ex))))
+                      ([_ _ _])
+                      ([_ _]))})]
+      (with-open [sock (Socket. "localhost" 3464)]
+        (with-open [reader (io/reader (.getInputStream sock))]
+          (is (= "1" (.readLine reader)))
+          (is (= "2" (.readLine reader)))))
+      (is (= [{:err ::tcp/write-queue-over-capacity}
+              {:err ::tcp/write-queue-full}]
+             (mapv ex-data @exceptions))))))
