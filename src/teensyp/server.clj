@@ -218,9 +218,12 @@
   - `:port` - the port number to listen on (mandatory)
   - `:handler` - a handler function (mandatory, see below)
   - `:executor` - a custom ExecutorService to supply worker threads
-  - `:buffer-size` - the buffer size in bytes (default 8K)
+  - `:read-buffer-size` - the read buffer size in bytes (default 8K)
+  - `:write-buffer-size` - the write buffer size in bytes (default 32K)
+  - `:write-queue-size` - the max number of writes in the queue (default 64)
 
-  The handler function must have three arities:
+  The handler function must have three arities:  - `:read-buffer-size` - the buffer size in bytes (default 8K)
+
 
       (fn handler
         ([write] initial-state)           ;; on socket accept

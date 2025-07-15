@@ -19,7 +19,7 @@ At minimum, TeensyP requires a port to listen on and a handler function:
 ```clojure
 (require '[teensyp.server :as tcp])
 
-(tcp/start-server {:port 3000, :handler demo-handler})```
+(tcp/start-server {:port 3000, :handler demo-handler})
 ```
 
 The handler function has three arities, and defines how the server
@@ -64,6 +64,19 @@ three special marker objects:
 
 You may also specify a second argument to `write`. This is a zero
 argument callback function that will be called when the write completes.
+
+## Options
+
+The `start-server` function takes a number of options:
+
+| Key                  | Description                                     | Mandatory | Default |
+|----------------------|-------------------------------------------------|-----------|---------|
+| `:executor`          | An `ExecutorService` to use for handler calls   |           |         |
+| `:handler`           | The handler function                            | Yes       |         |
+| `:port`              | The port number to listen on                    | Yes       |         |
+| `:read-buffer-size`  | The size in bytes of the channel read buffer    |           | 8K      |
+| `:write-buffer-size` | The size in bytes of the channel write buffer   |           | 32K     |
+| `:write-queue-size`  | The maximum number of writes that can be queued |           | 64      |
 
 ## Documentation
 
