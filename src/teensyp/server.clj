@@ -6,7 +6,7 @@
             ServerSocketChannel SocketChannel]
            [java.util Queue]
            [java.util.concurrent ArrayBlockingQueue Executors ExecutorService]
-           [java.util.concurrent.atomic AtomicInteger]))
+           [java.util.concurrent.atomic AtomicBoolean AtomicInteger]))
 
 (def CLOSE
   "A unique identifier that can be passed to the write function of a handler
@@ -80,7 +80,7 @@
    :write-limit (AtomicInteger. write-buffer-size)
    :state       (volatile! nil)
    :read-buffer (ByteBuffer/allocate read-buffer-size)
-   :working?    (atom false)
+   :working?    (AtomicBoolean. false)
    :closef      (volatile! nil)
    :paused?     (volatile! false)})
 
@@ -90,9 +90,9 @@
 
 (defn- handle-close [^SelectionKey key submit ex {:keys [handler]}]
   (-> key .channel .close)
-  (let [{:keys [working? closef]} (.attachment key)]
+  (let [{:keys [^AtomicBoolean working? closef]} (.attachment key)]
     (vreset! closef #(close-key key submit ex handler))
-    (when-not (compare-and-set! working? true false)
+    (when-not (.compareAndSet working? true false)
       (close-key key submit ex handler))))
 
 (defn- handle-accept
@@ -100,12 +100,12 @@
   (let [^Selector selector (-> key .selector)
         ^SocketChannel  ch (-> key .channel .accept)]
     (.configureBlocking ch false)
-    (let [{:keys [state working?] :as context} (new-context opts)
+    (let [{:keys [state ^AtomicBoolean working?] :as context} (new-context opts)
           key (.register ch selector 0 context)]
-      (reset! working? true)
+      (.set working? true)
       (submit #(try (vreset! state (handler (writer key)))
                     (finally
-                      (when-not (compare-and-set! working? true false)
+                      (when-not (.compareAndSet working? true false)
                         (@(-> key .attachment :closef)))
                       (update-ops key bit-or SelectionKey/OP_READ)
                       (.wakeup selector)))))))
@@ -145,7 +145,8 @@
 
 (defn- handle-read
   [^SelectionKey key submit {:keys [handler] :as opts}]
-  (let [{:keys [^ByteBuffer read-buffer state working?]} (.attachment key)
+  (let [{:keys [^ByteBuffer read-buffer state ^AtomicBoolean working?]}
+        (.attachment key)
         ^SocketChannel  ch (-> key .channel)
         ^Selector selector (-> key .selector)]
     (update-ops key bit-and-not SelectionKey/OP_READ)
@@ -153,10 +154,10 @@
       (if (neg? (.read ch read-buffer))
         (handle-close key submit nil opts)
         (do (.flip read-buffer)
-            (reset! working? true)
+            (.set working? true)
             (submit #(try (vswap! state handler read-buffer (writer key))
                           (finally
-                            (when-not (compare-and-set! working? true false)
+                            (when-not (.compareAndSet working? true false)
                               (@(-> key .attachment :closef)))
                             (.compact read-buffer)
                             (update-ops key bit-or SelectionKey/OP_READ)
@@ -181,15 +182,15 @@
 ;; turned back on for the key. This ensures that the selector cannot start a
 ;; new read for the key until the existing one completes.
 ;;
-;; Also before an accept or read, the :working? atom is set to true. When the
+;; Also before an accept or read, the :working? ref is set to true. When the
 ;; handler completes, it is set to false. If the channel needs to close
-;; suddenly, the :working? atom is checked. If it's true, then the handler is
+;; suddenly, the :working? ref is checked. If it's true, then the handler is
 ;; working; the close handler is queued and :working? is set to false. This
 ;; indicates to the worker thread that the close handler needs to be run after
 ;; it. Otherwise, the close handler is run immediately.
 ;;
 ;; The close event is always triggered from the main server thread, so worker
-;; threads running the handler are our only concern. We use compare-and-set!
+;; threads running the handler are our only concern. We use .compareAndSet
 ;; to atomically decide whether to run the close handler immediately or queue
 ;; it to be run after the worker thread. The queued close handler uses a
 ;; volatile because we know it will only be read after the :working? atom
