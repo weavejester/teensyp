@@ -1,7 +1,7 @@
 (ns teensyp.buffer
   (:refer-clojure :exclude [read-line])
   (:import [java.nio ByteBuffer]
-           [java.nio.charset Charset StandardCharsets]))
+           [java.nio.charset Charset]))
 
 (defn buffer
   "Create a ByteBuffer of the assigned size."
@@ -14,11 +14,12 @@
   (ByteBuffer/wrap (.getBytes s charset)))
 
 (defn index-of
-  "Find the first index of the specified byte in a buffer."
+  "Find the first index of the specified byte in a buffer, starting from the
+  buffer's position."
   [^ByteBuffer buffer needle]
-  (let [len (.remaining buffer)]
-    (loop [index 0]
-      (if (< index len)
+  (let [limit (.limit buffer)]
+    (loop [index (.position buffer)]
+      (if (< index limit)
         (if (= needle (.get buffer index))
           index
           (recur (inc index)))
@@ -32,13 +33,14 @@
       true)))
 
 (defn index-of-array
-  "Find the first index of the specified array of bytes within a buffer."
+  "Find the first index of the specified array of bytes within a buffer,
+  starting from the buffer's position."
   [^ByteBuffer buffer ^bytes needle]
   (if (zero? (alength needle))
     -1
     (let [b   (aget needle 0)
-          end (- (.remaining buffer) (alength needle) 1)]
-      (loop [i 0]
+          end (- (.limit buffer) (alength needle) 1)]
+      (loop [i (.position buffer)]
         (if (and (= b (.get buffer i))
                  (matches-tail-bytes? buffer i needle))
           i
@@ -52,11 +54,12 @@
   returned, the buffer's position is advanced accordingly."
   [^ByteBuffer buffer ^Charset charset]
   (let [CR 0x0D, LF 0x0A
+        start (.position buffer)
         index (index-of buffer LF)]
     (when (not= index -1)
       (let [len (if (= CR (.get buffer (dec index)))
-                  (dec index)
-                  index)
+                  (- index start 1)
+                  (- index start))
             bs  (byte-array len)]
         (.get buffer bs)
         (.position buffer (inc index))
