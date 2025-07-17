@@ -53,7 +53,8 @@ the handler.
 The handler is guaranteed to be called sequentially for the same
 channel. That is, the 1-arity accept is always first, the 2-arity close
 is always last, and each handler call for the same channel must finish
-before the next begins.
+before the next begins. The write queue is also guaranteed to be empty
+when the handler is called.
 
 The `write` function accepts a single `ByteBuffer` argument, or one of
 three special marker objects:
