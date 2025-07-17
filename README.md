@@ -42,6 +42,7 @@ behaves.
    ;; With 2 arguments, we have the channel closing. If it closed due to an
    ;; exception, that exception is passed as the second argument, otherwise it
    ;; will be nil.
+   (println "Total bytes:" (:read-bytes state))
   ))
 ```
 
@@ -50,11 +51,7 @@ structure, but is usually a map. This state is unique to the channel,
 and is updated each time the channel is read from by the 3-arity form of
 the handler.
 
-The handler is guaranteed to be called sequentially for the same
-channel. That is, the 1-arity accept is always first, the 2-arity close
-is always last, and each handler call for the same channel must finish
-before the next begins. The write queue is also guaranteed to be empty
-when the handler is called.
+### Writes
 
 The `write` function accepts a single `ByteBuffer` argument, or one of
 three special marker objects:
@@ -66,7 +63,17 @@ three special marker objects:
 You may also specify a second argument to `write`. This is a zero
 argument callback function that will be called when the write completes.
 
-## Options
+### Guarantees
+
+TeensyP makes several guarantees that apply per-channel:
+
+- The 1-arity accept is always called first.
+- The 2-arity close is always called last.
+- The current handler call for the channel must finish before the next
+  can begin.
+- The write queue queue must be empty before the handler is called.
+
+### Server Options
 
 The `start-server` function takes a number of options:
 
