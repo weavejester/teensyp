@@ -41,8 +41,40 @@
         (.remove iter)
         (recur)))))
 
-(defn- update-ops [^SelectionKey key f op]
-  (.interestOps key (f (.interestOps key) op)))
+;; The socket channel is only read from when no flags are set. That is, the
+;; channel is not closed or paused, and not in the middle of writing or
+;; still in the middle of handling a previous read (working).
+
+(def ^:private ^:const writing 0x01)
+(def ^:private ^:const working 0x02)
+(def ^:private ^:const closed  0x04)
+(def ^:private ^:const paused  0x08)
+
+(defn- bit-flag-set? [flags flag]
+  (not (zero? (bit-and flags flag))))
+
+(defn- interest-ops [flags]
+  (bit-or (if (zero? flags) SelectionKey/OP_READ 0)
+          (if (and (bit-flag-set? flags writing)
+                   (not (bit-flag-set? flags closed)))
+            SelectionKey/OP_WRITE 0)))
+
+(defn- update-flags [^SelectionKey key f]
+  (let [vflags (-> key .attachment :flags)]
+    (locking key
+      (let [flags (vswap! vflags f)]
+        (when (.isValid key)
+          (.interestOps key (interest-ops flags)))
+        flags))))
+
+(defn- set-flag [key flag]
+  (update-flags key #(bit-or % flag)))
+
+(defn- unset-flag [key flag]
+  (update-flags key #(bit-and-not % flag)))
+
+(defn- has-flag? [key flag]
+  (-> key .attachment :flags deref (bit-flag-set? flag)))
 
 (defn- ex-write-queue-full []
   (ex-info "Write queue full" {:err ::write-queue-full}))
@@ -68,7 +100,7 @@
        (when (instance? ByteBuffer buffer)
          (update-write-limit write-limit buffer))
        (.add write-queue [buffer callback])
-       (update-ops key bit-or SelectionKey/OP_WRITE)
+       (set-flag key writing)
        (-> key .selector .wakeup)))))
 
 (defn- new-context
@@ -78,45 +110,38 @@
            write-queue-size  64}}]
   {:write-queue (ArrayBlockingQueue. write-queue-size)
    :write-limit (AtomicInteger. write-buffer-size)
+   :flags       (volatile! 0)
    :state       (volatile! nil)
    :read-buffer (ByteBuffer/allocate read-buffer-size)
-   :working?    (AtomicBoolean. false)
-   :closef      (volatile! nil)
-   :paused?     (volatile! false)})
+   :closef      (volatile! nil)})
 
 (defn- close-key [^SelectionKey key submit ex handler]
   (let [state (-> key .attachment :state)]
     (submit #(vswap! state handler ex))))
 
 (defn- handle-close [^SelectionKey key submit ex {:keys [handler]}]
-  (-> key .channel .close)
-  (let [{:keys [^AtomicBoolean working? closef]} (.attachment key)]
-    (vreset! closef #(close-key key submit ex handler))
-    (when-not (.compareAndSet working? true false)
-      (close-key key submit ex handler))))
+  (let [closef (-> key .attachment :closef)]
+    (-> key .channel .close)
+    (set-flag key closed)
+    (locking key
+      (if (has-flag? key working)
+        (vreset! closef #(close-key key submit ex handler))
+        (close-key key submit ex handler)))))
 
 (defn- handle-accept
   [^SelectionKey key submit {:keys [handler] :as opts}]
   (let [^Selector selector (-> key .selector)
         ^SocketChannel  ch (-> key .channel .accept)]
     (.configureBlocking ch false)
-    (let [{:keys [state ^AtomicBoolean working?] :as context} (new-context opts)
+    (let [{:keys [state] :as context} (new-context opts)
           key (.register ch selector 0 context)]
-      (.set working? true)
+      (set-flag key working)
       (submit #(try (vreset! state (handler (writer key)))
                     (finally
-                      (when-not (.compareAndSet working? true false)
-                        (@(-> key .attachment :closef)))
-                      (update-ops key bit-or SelectionKey/OP_READ)
-                      (.wakeup selector)))))))
-
-(defn- pause-key [^SelectionKey key]
-  (vreset! (-> key .attachment :paused?) true)
-  (update-ops key bit-and-not SelectionKey/OP_READ))
-
-(defn- resume-key [^SelectionKey key]
-  (vreset! (-> key .attachment :paused?) false)
-  (update-ops key bit-or SelectionKey/OP_READ))
+                      (let [flags (unset-flag key working)]
+                        (if (bit-flag-set? flags closed)
+                          (@(-> key .attachment :closef))
+                          (.wakeup selector)))))))))
 
 (defn- handle-write [^SelectionKey key submit opts]
   (let [{:keys [^Queue         write-queue
@@ -126,11 +151,11 @@
            (if-some [[buffer callback] (.peek write-queue)]
              (condp identical? buffer
                CLOSE        (.close ch)
-               PAUSE-READS  (do (pause-key key)
+               PAUSE-READS  (do (set-flag key paused)
                                 (.poll write-queue)
                                 (some-> callback submit)
                                 (recur))
-               RESUME-READS (do (resume-key key)
+               RESUME-READS (do (unset-flag key paused)
                                 (.poll write-queue)
                                 (some-> callback submit)
                                 (recur))
@@ -139,29 +164,27 @@
                      (.poll write-queue)
                      (some-> callback submit)
                      (recur))))
-             (update-ops key bit-and-not SelectionKey/OP_WRITE)))
+             (unset-flag key writing)))
          (catch IOException ex
            (handle-close key submit ex opts)))))
 
 (defn- handle-read
   [^SelectionKey key submit {:keys [handler] :as opts}]
-  (let [{:keys [^ByteBuffer read-buffer state ^AtomicBoolean working?]}
-        (.attachment key)
+  (let [{:keys [^ByteBuffer read-buffer state]} (.attachment key)
         ^SocketChannel  ch (-> key .channel)
         ^Selector selector (-> key .selector)]
-    (update-ops key bit-and-not SelectionKey/OP_READ)
     (try
       (if (neg? (.read ch read-buffer))
         (handle-close key submit nil opts)
         (do (.flip read-buffer)
-            (.set working? true)
+            (set-flag key working)
             (submit #(try (vswap! state handler read-buffer (writer key))
                           (finally
-                            (when-not (.compareAndSet working? true false)
-                              (@(-> key .attachment :closef)))
                             (.compact read-buffer)
-                            (update-ops key bit-or SelectionKey/OP_READ)
-                            (.wakeup selector))))))
+                            (let [flags (unset-flag key working)]
+                              (if (bit-flag-set? flags closed)
+                                (@(-> key .attachment :closef))
+                                (.wakeup selector))))))))
       (catch IOException ex
         (handle-close key submit ex opts)))))
 
@@ -170,31 +193,7 @@
     (cond
       (.isAcceptable key) (handle-accept key submit opts)
       (.isWritable key)   (handle-write key submit opts)
-      (.isReadable key)   (if (-> key .attachment :paused? deref)
-                            (update-ops key bit-and-not SelectionKey/OP_READ)
-                            (handle-read key submit opts)))))
-
-;; The handler is called when accepting, reading and closing a socket channel,
-;; and is always run within a worker thread assigned by the executor.
-;;
-;; Before an accept or read, the selector is told to ignore future reads for
-;; the associated selection key. When the handler has completed, reads are
-;; turned back on for the key. This ensures that the selector cannot start a
-;; new read for the key until the existing one completes.
-;;
-;; Also before an accept or read, the :working? ref is set to true. When the
-;; handler completes, it is set to false. If the channel needs to close
-;; suddenly, the :working? ref is checked. If it's true, then the handler is
-;; working; the close handler is queued and :working? is set to false. This
-;; indicates to the worker thread that the close handler needs to be run after
-;; it. Otherwise, the close handler is run immediately.
-;;
-;; The close event is always triggered from the main server thread, so worker
-;; threads running the handler are our only concern. We use .compareAndSet
-;; to atomically decide whether to run the close handler immediately or queue
-;; it to be run after the worker thread. The queued close handler uses a
-;; volatile because we know it will only be read after the :working? atom
-;; is set, so no two threads have simultaneous access.
+      (.isReadable key)   (handle-read key submit opts))))
 
 (defn- server-loop
   [^ServerSocketChannel server-ch ^Selector selector
