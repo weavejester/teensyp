@@ -1,4 +1,5 @@
 (ns teensyp.server
+  "The main server namespace."
   (:import [java.io IOException]
            [java.net InetSocketAddress]
            [java.nio ByteBuffer]
@@ -6,7 +7,7 @@
             ServerSocketChannel SocketChannel]
            [java.util Queue]
            [java.util.concurrent ArrayBlockingQueue Executors ExecutorService]
-           [java.util.concurrent.atomic AtomicBoolean AtomicInteger]))
+           [java.util.concurrent.atomic AtomicInteger]))
 
 (def CLOSE
   "A unique identifier that can be passed to the write function of a handler

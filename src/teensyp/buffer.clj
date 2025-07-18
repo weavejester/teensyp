@@ -1,4 +1,5 @@
 (ns teensyp.buffer
+  "A namespace of utility functions for managing ByteBuffer objects."
   (:refer-clojure :exclude [read-line])
   (:import [java.nio ByteBuffer]
            [java.nio.charset Charset]))
