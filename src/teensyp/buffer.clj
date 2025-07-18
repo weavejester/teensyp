@@ -70,13 +70,15 @@
   "Copy the source buffer into the destination buffer, and increment the
   positions of both buffers. If the source buffer has more remaining than the
   destination, as much as possible will be copied until the destination is
-  full."
+  full. Returns the number of bytes copied."
   [^ByteBuffer src ^ByteBuffer dest]
-  (when (and (.hasRemaining src) (.hasRemaining dest))
-    (let [diff (- (.remaining src) (.remaining dest))]
-      (if (pos? diff)
-        (let [limit (.limit src)]
-          (.limit src (- limit diff))
-          (.put dest src)
-          (.limit src limit))
-        (.put dest src)))))
+  (let [total (min (.remaining src) (.remaining dest))]
+    (when (pos? total)
+      (let [diff  (- (.remaining src) (.remaining dest))]
+        (if (pos? diff)
+          (let [limit (.limit src)]
+            (.limit src (- limit diff))
+            (.put dest src)
+            (.limit src limit))
+          (.put dest src))))
+    total))
