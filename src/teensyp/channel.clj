@@ -1,8 +1,9 @@
 (ns teensyp.channel
   (:require [teensyp.buffer :as buf])
-  (:import [java.nio ByteBuffer]
+  (:import [java.io InputStream OutputStream]
+           [java.nio ByteBuffer]
            [java.nio.channels AsynchronousByteChannel Channel
-            ClosedChannelException CompletionHandler
+            Channels ClosedChannelException CompletionHandler
             ReadPendingException WritePendingException]
            [java.util.concurrent CompletableFuture Future]))
 
@@ -64,3 +65,9 @@
 
 (defn buffer-channel ^AsynchronousByteChannel []
   (AsyncByteBufferChannel. nil nil nil true))
+
+(defn ->input-stream ^InputStream [^AsynchronousByteChannel ch]
+  (Channels/newInputStream ch))
+
+(defn ->output-stream ^OutputStream [^AsynchronousByteChannel ch]
+  (Channels/newOutputStream ch))

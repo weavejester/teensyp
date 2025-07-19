@@ -1,5 +1,6 @@
 (ns teensyp.channel-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [clojure.java.io :as io]
+            [clojure.test :refer [deftest is]]
             [teensyp.channel :as ch])
   (:import [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
@@ -78,3 +79,22 @@
       (.get buf bs)
       (is (= (apply str (range 128))
              (String. bs ascii))))))
+
+(deftest streaming-test
+  (let [ch   (ch/buffer-channel)
+        in   (ch/->input-stream ch)
+        out  (ch/->output-stream ch)
+        sb   (StringBuilder.)
+        tout (Thread. #(let [w (io/writer out)]
+                         (dotimes [i 128]
+                           (.write w (str i "\n")))
+                         (.flush w)))
+        tin  (Thread. #(let [r (io/reader in)]
+                         (dotimes [_ 128]
+                           (.append sb (.readLine r)))))]
+    (.start tin)
+    (.start tout)
+    (.join tin)
+    (.join tout)
+    (is (= (apply str (range 128))
+           (.toString sb)))))
