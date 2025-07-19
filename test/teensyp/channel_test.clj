@@ -26,7 +26,7 @@
     (let [buf (ByteBuffer/allocate 5)
           fut (.read ch buf)]
       (is (.isDone fut))
-      (is (= 5 (.get fut)))
+      (is (= 5 (.get fut 1 TimeUnit/SECONDS)))
       (is (= [104 101 108 108 111] (seq (.array buf)))))))
 
 (deftest partial-read-test
@@ -35,12 +35,12 @@
     (let [buf (ByteBuffer/allocate 3)
           fut (.read ch buf)]
       (is (.isDone fut))
-      (is (= 3 (.get fut)))
+      (is (= 3 (.get fut 1 TimeUnit/SECONDS)))
       (is (= [104 101 108] (seq (.array buf)))))
     (let [buf (ByteBuffer/allocate 3)
           fut (.read ch buf)]
       (is (.isDone fut))
-      (is (= 2 (.get fut)))
+      (is (= 2 (.get fut 1 TimeUnit/SECONDS)))
       (is (= [108 111 0] (seq (.array buf)))))))
 
 (deftest write-wait-test
@@ -67,13 +67,13 @@
   (let [ch   (ch/async-channel)
         buf  (ByteBuffer/allocate 2048)
         tin  (Thread. #(dotimes [i 128]
-                         (.get (write-str ch (str i)))))
+                         (.get (write-str ch (str i)) 1 TimeUnit/SECONDS)))
         tout (Thread. #(dotimes [_ 128]
-                         (.get (.read ch buf))))]
+                         (.get (.read ch buf) 1 TimeUnit/SECONDS)))]
     (.start tin)
     (.start tout)
-    (.join tin)
-    (.join tout)
+    (.join tin 1000)
+    (.join tout 1000)
     (.flip buf)
     (let [bs (byte-array (.remaining buf))]
       (.get buf bs)
@@ -94,7 +94,7 @@
                            (.append sb (.readLine r)))))]
     (.start tin)
     (.start tout)
-    (.join tin)
-    (.join tout)
+    (.join tin 1000)
+    (.join tout 1000)
     (is (= (apply str (range 128))
            (.toString sb)))))
