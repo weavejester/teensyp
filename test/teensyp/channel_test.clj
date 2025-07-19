@@ -13,13 +13,13 @@
   (.write ch (ByteBuffer/wrap (.getBytes s ascii))))
 
 (deftest close-channel-test
-  (let [ch (ch/buffer-channel)]
+  (let [ch (ch/async-channel)]
     (is (.isOpen ch))
     (.close ch)
     (is (not (.isOpen ch)))))
 
 (deftest future-channel-test
-  (let [ch  (ch/buffer-channel)
+  (let [ch  (ch/async-channel)
         fut (write-str ch "hello")]
     (is (.isDone fut))
     (is (= (.get fut) 5))
@@ -30,7 +30,7 @@
       (is (= [104 101 108 108 111] (seq (.array buf)))))))
 
 (deftest partial-read-test
-  (let [ch (ch/buffer-channel)]
+  (let [ch (ch/async-channel)]
     (write-str ch "hello")
     (let [buf (ByteBuffer/allocate 3)
           fut (.read ch buf)]
@@ -44,7 +44,7 @@
       (is (= [108 111 0] (seq (.array buf)))))))
 
 (deftest write-wait-test
-  (let [ch (ch/buffer-channel)]
+  (let [ch (ch/async-channel)]
     (write-str ch "hello")
     (.read ch (ByteBuffer/allocate 3))
     (let [fut (write-str ch "world")]
@@ -54,7 +54,7 @@
       (is (= 5 (.get fut 1 TimeUnit/SECONDS))))))
 
 (deftest read-wait-test
-  (let [ch  (ch/buffer-channel)
+  (let [ch  (ch/async-channel)
         buf (ByteBuffer/allocate 5)
         fut (.read ch buf)]
     (is (not (.isDone fut)))
@@ -64,7 +64,7 @@
     (is (= [104 101 108 108 111] (seq (.array buf))))))
 
 (deftest multi-thread-test
-  (let [ch   (ch/buffer-channel)
+  (let [ch   (ch/async-channel)
         buf  (ByteBuffer/allocate 2048)
         tin  (Thread. #(dotimes [i 128]
                          (.get (write-str ch (str i)))))
@@ -81,7 +81,7 @@
              (String. bs ascii))))))
 
 (deftest streaming-test
-  (let [ch   (ch/buffer-channel)
+  (let [ch   (ch/async-channel)
         in   (ch/->input-stream ch)
         out  (ch/->output-stream ch)
         sb   (StringBuilder.)

@@ -63,7 +63,7 @@
   (isOpen [_] open?)
   (close [_] (set! open? false)))
 
-(defn buffer-channel ^AsynchronousByteChannel []
+(defn async-channel ^AsynchronousByteChannel []
   (AsyncByteBufferChannel. nil nil nil true))
 
 (defn ->input-stream ^InputStream [^AsynchronousByteChannel ch]
