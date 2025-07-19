@@ -28,7 +28,7 @@
                       rem (-> this .buffer .remaining)]
                   (when (zero? rem)
                     (set! (.buffer this) nil))
-                  (.completed handler num att)
+                  (.completed handler (int num) att)
                   (when (and pending-write (zero? rem))
                     (pending-write)
                     (set! (.pending-write this) nil)))))]
@@ -47,7 +47,7 @@
     (letfn [(write-buffer []
               (locking this
                 (set! (.buffer this) buf)
-                (.completed handler (.remaining buf) att)
+                (.completed handler (-> buf .remaining int) att)
                 (when pending-read
                   (pending-read)
                   (set! (.pending-read this) nil))))]
