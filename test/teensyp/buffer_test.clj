@@ -13,6 +13,11 @@
   (is (= [104 101 108 108 111]
          (seq (.array (buf/str->buffer "hello" ascii))))))
 
+(deftest buffer->str-test
+  (is (= "hello" (buf/buffer->str
+                  (ByteBuffer/wrap (.getBytes "hello" ascii))
+                  ascii))))
+
 (deftest index-of-test
   (let [bs (byte-array [104 101 108 108 111])]
     (is (= 2 (-> (ByteBuffer/wrap bs) (buf/index-of 108))))

@@ -14,6 +14,13 @@
   ^ByteBuffer [^String s ^Charset charset]
   (ByteBuffer/wrap (.getBytes s charset)))
 
+(defn buffer->str
+  "Read a String from a ByteBuffer."
+  ^String [^ByteBuffer buf ^Charset charset]
+  (let [bs (byte-array (.remaining buf))]
+    (.get buf bs)
+    (String. bs charset)))
+
 (defn index-of
   "Find the first index of the specified byte in a buffer, starting from the
   buffer's position."
