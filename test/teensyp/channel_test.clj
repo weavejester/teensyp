@@ -61,3 +61,20 @@
     (is (.isDone fut))
     (is (= 5 (.get fut 1 TimeUnit/SECONDS)))
     (is (= [104 101 108 108 111] (seq (.array buf))))))
+
+(deftest multi-thread-test
+  (let [ch   (ch/buffer-channel)
+        buf  (ByteBuffer/allocate 2048)
+        tin  (Thread. #(dotimes [i 128]
+                         (.get (write-str ch (str i)))))
+        tout (Thread. #(dotimes [_ 128]
+                         (.get (.read ch buf))))]
+    (.start tin)
+    (.start tout)
+    (.join tin)
+    (.join tout)
+    (.flip buf)
+    (let [bs (byte-array (.remaining buf))]
+      (.get buf bs)
+      (is (= (apply str (range 128))
+             (String. bs ascii))))))
