@@ -3,9 +3,13 @@
             [teensyp.channel :as ch])
   (:import [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
+           [java.nio.channels AsynchronousByteChannel]
            [java.util.concurrent TimeUnit]))
 
 (def ascii StandardCharsets/US_ASCII)
+
+(defn- write-str [^AsynchronousByteChannel ch s]
+  (.write ch (ByteBuffer/wrap (.getBytes s ascii))))
 
 (deftest close-channel-test
   (let [ch (ch/buffer-channel)]
@@ -15,7 +19,7 @@
 
 (deftest future-channel-test
   (let [ch  (ch/buffer-channel)
-        fut (.write ch (ByteBuffer/wrap (.getBytes "hello" ascii)))]
+        fut (write-str ch "hello")]
     (is (.isDone fut))
     (is (= (.get fut) 5))
     (let [buf (ByteBuffer/allocate 5)
@@ -26,7 +30,7 @@
 
 (deftest partial-read-test
   (let [ch (ch/buffer-channel)]
-    (.write ch (ByteBuffer/wrap (.getBytes "hello" ascii)))
+    (write-str ch "hello")
     (let [buf (ByteBuffer/allocate 3)
           fut (.read ch buf)]
       (is (.isDone fut))
@@ -40,9 +44,9 @@
 
 (deftest write-wait-test
   (let [ch (ch/buffer-channel)]
-    (.write ch (ByteBuffer/wrap (.getBytes "hello" ascii)))
+    (write-str ch "hello")
     (.read ch (ByteBuffer/allocate 3))
-    (let [fut (.write ch (ByteBuffer/wrap (.getBytes "world" ascii)))]
+    (let [fut (write-str ch "world")]
       (is (not (.isDone fut)))
       (.read ch (ByteBuffer/allocate 2))
       (is (.isDone fut))
@@ -53,7 +57,7 @@
         buf (ByteBuffer/allocate 5)
         fut (.read ch buf)]
     (is (not (.isDone fut)))
-    (.write ch (ByteBuffer/wrap (.getBytes "hello" ascii)))
+    (write-str ch "hello")
     (is (.isDone fut))
     (is (= 5 (.get fut 1 TimeUnit/SECONDS)))
     (is (= [104 101 108 108 111] (seq (.array buf))))))
