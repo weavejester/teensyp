@@ -47,3 +47,13 @@
       (.read ch (ByteBuffer/allocate 2))
       (is (.isDone fut))
       (is (= 5 (.get fut 1 TimeUnit/SECONDS))))))
+
+(deftest read-wait-test
+  (let [ch  (ch/buffer-channel)
+        buf (ByteBuffer/allocate 5)
+        fut (.read ch buf)]
+    (is (not (.isDone fut)))
+    (.write ch (ByteBuffer/wrap (.getBytes "hello" ascii)))
+    (is (.isDone fut))
+    (is (= 5 (.get fut 1 TimeUnit/SECONDS)))
+    (is (= [104 101 108 108 111] (seq (.array buf))))))

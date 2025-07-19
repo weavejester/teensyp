@@ -24,8 +24,8 @@
   (^void read [this ^ByteBuffer buf att ^CompletionHandler handler]
     (letfn [(read-buffer []
               (locking this
-                (let [num (buf/copy buffer buf)
-                      rem (.remaining buffer)]
+                (let [num (buf/copy (.buffer this) buf)
+                      rem (-> this .buffer .remaining)]
                   (when (zero? rem)
                     (set! (.buffer this) nil))
                   (.completed handler num att)
@@ -35,7 +35,7 @@
         (when-not open? (throw (ClosedChannelException.)))
         (if (nil? buffer)
           (if (nil? pending-read)
-            (set! pending-read buf)
+            (set! pending-read read-buffer)
             (throw (ReadPendingException.)))
           (read-buffer)))))
   (^Future write [this ^ByteBuffer buf]
