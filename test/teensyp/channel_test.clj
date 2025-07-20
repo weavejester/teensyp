@@ -1,11 +1,11 @@
 (ns teensyp.channel-test
   (:require [clojure.java.io :as io]
-            [clojure.test :refer [deftest is]]
+            [clojure.test :refer [deftest is testing]]
             [teensyp.channel :as ch])
   (:import [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]
-           [java.nio.channels AsynchronousByteChannel]
-           [java.util.concurrent TimeUnit]))
+           [java.nio.channels AsynchronousByteChannel ClosedChannelException]
+           [java.util.concurrent ExecutionException TimeUnit]))
 
 (def ascii StandardCharsets/US_ASCII)
 
@@ -13,10 +13,29 @@
   (.write ch (ByteBuffer/wrap (.getBytes s ascii))))
 
 (deftest close-channel-test
-  (let [ch (ch/async-channel)]
+  (let [ch  (ch/async-channel)
+        buf (ByteBuffer/allocate 5)]
     (is (.isOpen ch))
     (.close ch)
-    (is (not (.isOpen ch)))))
+    (is (not (.isOpen ch)))
+    (is (thrown? ClosedChannelException (.write ch buf)))
+    (is (thrown? ClosedChannelException (.read ch buf)))))
+
+(deftest close-channel-future-test
+  (testing "reads"
+    (let [ch  (ch/async-channel)
+          buf (ByteBuffer/allocate 5)
+          fut (.read ch buf)]
+      (.close ch)
+      (is (thrown? ExecutionException (.get fut)))))
+  (testing "writes"
+    (let [ch   (ch/async-channel)
+          fut1 (.write ch (ByteBuffer/wrap (.getBytes "hello" ascii)))
+          fut2 (.write ch (ByteBuffer/wrap (.getBytes "world" ascii)))]
+      (is (.isDone fut1))
+      (is (= 5 (.get fut1 1 TimeUnit/SECONDS)))
+      (.close ch)
+      (is (thrown? ExecutionException (.get fut2))))))
 
 (deftest future-channel-test
   (let [ch  (ch/async-channel)

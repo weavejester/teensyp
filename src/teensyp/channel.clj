@@ -16,7 +16,7 @@
          [^:volatile-mutable ^ByteBuffer buffer
           ^:volatile-mutable pending-read
           ^:volatile-mutable pending-write
-          ^:volatile-mutable open?]
+          ^:volatile-mutable closed?]
   AsynchronousByteChannel
   (^Future read [this ^ByteBuffer buf]
     (let [fut (CompletableFuture.)]
@@ -25,17 +25,19 @@
   (^void read [this ^ByteBuffer buf att ^CompletionHandler handler]
     (letfn [(read-buffer []
               (locking this
-                (let [num (buf/copy (.buffer this) buf)
-                      rem (-> this .buffer .remaining)]
-                  (when (zero? rem)
-                    (set! (.buffer this) nil))
-                  (.completed handler (int num) att)
-                  (when-some [pending-write (.pending-write this)]
+                (if (.closed? this)
+                  (.failed handler (ClosedChannelException.) nil)
+                  (let [num (buf/copy (.buffer this) buf)
+                        rem (-> this .buffer .remaining)]
                     (when (zero? rem)
-                      (pending-write)
-                      (set! (.pending-write this) nil))))))]
+                      (set! (.buffer this) nil))
+                    (.completed handler (int num) att)
+                    (when-some [pending-write (.pending-write this)]
+                      (when (zero? rem)
+                        (pending-write)
+                        (set! (.pending-write this) nil)))))))]
       (locking this
-        (when-not open? (throw (ClosedChannelException.)))
+        (when closed? (throw (ClosedChannelException.)))
         (if (nil? buffer)
           (if (nil? pending-read)
             (set! pending-read read-buffer)
@@ -48,24 +50,29 @@
   (^void write [this ^ByteBuffer buf att ^CompletionHandler handler]
     (letfn [(write-buffer []
               (locking this
-                (set! (.buffer this) buf)
-                (.completed handler (-> buf .remaining int) att)
-                (when-some [pending-read (.pending-read this)]
-                  (pending-read)
-                  (set! (.pending-read this) nil))))]
+                (if (.closed? this)
+                  (.failed handler (ClosedChannelException.) nil)
+                  (do (set! (.buffer this) buf)
+                      (.completed handler (-> buf .remaining int) att)
+                      (when-some [pending-read (.pending-read this)]
+                        (pending-read)
+                        (set! (.pending-read this) nil))))))]
       (locking this
-        (when-not open? (throw (ClosedChannelException.)))
+        (when closed? (throw (ClosedChannelException.)))
         (if (nil? buffer)
           (write-buffer)
           (if (nil? pending-write)
             (set! pending-write write-buffer)
             (throw (WritePendingException.)))))))
   Channel
-  (isOpen [_] open?)
-  (close [_] (set! open? false)))
+  (isOpen [_] (not closed?))
+  (close [_]
+    (set! closed? true)
+    (when pending-write (pending-write))
+    (when pending-read  (pending-read))))
 
 (defn async-channel ^AsynchronousByteChannel []
-  (AsyncByteBufferChannel. nil nil nil true))
+  (AsyncByteBufferChannel. nil nil nil false))
 
 (defn ->input-stream ^InputStream [^AsynchronousByteChannel ch]
   (Channels/newInputStream ch))
