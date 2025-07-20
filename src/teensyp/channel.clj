@@ -30,9 +30,10 @@
                   (when (zero? rem)
                     (set! (.buffer this) nil))
                   (.completed handler (int num) att)
-                  (when (and pending-write (zero? rem))
-                    (pending-write)
-                    (set! (.pending-write this) nil)))))]
+                  (when-some [pending-write (.pending-write this)]
+                    (when (zero? rem)
+                      (pending-write)
+                      (set! (.pending-write this) nil))))))]
       (locking this
         (when-not open? (throw (ClosedChannelException.)))
         (if (nil? buffer)
@@ -49,7 +50,7 @@
               (locking this
                 (set! (.buffer this) buf)
                 (.completed handler (-> buf .remaining int) att)
-                (when pending-read
+                (when-some [pending-read (.pending-read this)]
                   (pending-read)
                   (set! (.pending-read this) nil))))]
       (locking this

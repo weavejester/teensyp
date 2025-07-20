@@ -65,19 +65,19 @@
 
 (deftest multi-thread-test
   (let [ch   (ch/async-channel)
-        buf  (ByteBuffer/allocate 2048)
-        tin  (Thread. #(dotimes [i 128]
+        buf  (ByteBuffer/allocate 4096)
+        tin  (Thread. #(dotimes [i 1024]
                          (.get (write-str ch (str i)) 1 TimeUnit/SECONDS)))
-        tout (Thread. #(dotimes [_ 128]
+        tout (Thread. #(dotimes [_ 1024]
                          (.get (.read ch buf) 1 TimeUnit/SECONDS)))]
     (.start tin)
     (.start tout)
-    (.join tin 1000)
-    (.join tout 1000)
+    (.join tin 4000)
+    (.join tout 4000)
     (.flip buf)
     (let [bs (byte-array (.remaining buf))]
       (.get buf bs)
-      (is (= (apply str (range 128))
+      (is (= (apply str (range 1024))
              (String. bs ascii))))))
 
 (deftest streaming-test
