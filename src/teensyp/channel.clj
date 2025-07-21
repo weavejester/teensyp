@@ -1,4 +1,6 @@
 (ns teensyp.channel
+  "A namespace of utility functions for interoperating with Java channels and
+  streams."
   (:require [teensyp.buffer :as buf])
   (:import [java.io InputStream OutputStream]
            [java.nio ByteBuffer]
@@ -71,11 +73,28 @@
     (when pending-write (pending-write))
     (when pending-read  (pending-read))))
 
-(defn async-channel ^AsynchronousByteChannel []
+(defn async-channel
+  "Create a channel object satisfying the `AsynchronousByteChannel` interface.
+  ByteBuffers written to this channel with the `write` method can be later
+  read back with the `read` method.
+
+  Only one write and one read can be pending. Attempting to write or read
+  from the channel when there are operations pending will result in a
+  WritePendingException or ReadPendingException respectively.
+
+  When a buffer is passed to the `write` method, it is owned by the channel
+  until it is fully read. This avoids the use of an intermediate buffer, but
+  care needs to be taken around the reuse of buffers."
+  ^AsynchronousByteChannel []
   (AsyncByteBufferChannel. nil nil nil false))
 
-(defn ->input-stream ^InputStream [^AsynchronousByteChannel ch]
+(defn ->input-stream
+  "Convert an `AsynchronousByteChannel` into a blocking `InputStream` instance."
+  ^InputStream [^AsynchronousByteChannel ch]
   (Channels/newInputStream ch))
 
-(defn ->output-stream ^OutputStream [^AsynchronousByteChannel ch]
+(defn ->output-stream
+  "Convert an `AsynchronousByteChannel` into a blocking `OutputStream`
+  instance."
+  ^OutputStream [^AsynchronousByteChannel ch]
   (Channels/newOutputStream ch))
