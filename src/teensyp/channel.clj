@@ -86,7 +86,7 @@
 
   Only one write and one read can be pending. Attempting to write or read
   from the channel when there are operations pending will result in a
-  WritePendingException or ReadPendingException respectively.
+  `WritePendingException` or `ReadPendingException` respectively.
 
   When a buffer is passed to the `write` method, it is owned by the channel
   until it is fully read. This avoids the use of an intermediate buffer, but

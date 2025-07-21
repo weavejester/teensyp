@@ -16,12 +16,12 @@
 
 (def PAUSE-READS
   "A unique identifier that can be passed to the write function of a handler
-  in order to pause reads. See: RESUME-READS."
+  in order to pause reads. See: [[RESUME-READS]]."
   (Object.))
 
 (def RESUME-READS
   "A unique identifier that can be passed to the write function of a handler
-  in order to pause reads. See: RESUME-READS."
+  in order to pause reads. See: [[PAUSE-READS]]."
   (Object.))
 
 (defn- server-socket-channel ^ServerSocketChannel [port]
@@ -223,8 +223,7 @@
   - `:write-buffer-size` - the write buffer size in bytes (default 32K)
   - `:write-queue-size` - the max number of writes in the queue (default 64)
 
-  The handler function must have three arities:  - `:read-buffer-size` - the buffer size in bytes (default 8K)
-
+  The handler function must have three arities:
 
       (fn handler
         ([write] initial-state)           ;; on socket accept
@@ -233,11 +232,10 @@
 
   The `buffer` is a java.nio.ByteBuffer instance, and `write` is a function
   that takes a buffer as an argument and will queue it to send to the client.
-  To close the channel, pass `teensyp.server/CLOSE` to the write function.
+  To close the channel, pass [[CLOSE]] to the write function.
 
-  The write function may also take `teensyp.server/PAUSE-READS` and
-  `teensyp.server/RESUME-READS`. These will pause and resume reads calls
-  respectively.
+  The write function may also take [[PAUSE-READS]] and [[RESUME-READS]].
+  These will pause and resume reads calls respectively.
 
   You may optionally specify a second argument to `write`. This is should be
   a zero-argument callback function, which is called after the write completes.
