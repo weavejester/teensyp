@@ -9,10 +9,10 @@
             ReadPendingException WritePendingException]
            [java.util.concurrent CompletableFuture Future]))
 
-(deftype FutureCompletionHandler [^CompletableFuture fut]
-  CompletionHandler
-  (completed [_ result _] (.complete fut result))
-  (failed [_ ex _] (.completeExceptionally fut ex)))
+(defn- future-handler [^CompletableFuture fut]
+  (reify CompletionHandler
+    (completed [_ result _] (.complete fut result))
+    (failed [_ ex _] (.completeExceptionally fut ex))))
 
 (deftype AsyncByteBufferChannel
          [^:volatile-mutable ^ByteBuffer buffer
@@ -22,7 +22,7 @@
   AsynchronousByteChannel
   (^Future read [this ^ByteBuffer buf]
     (let [fut (CompletableFuture.)]
-      (.read this buf nil (FutureCompletionHandler. fut))
+      (.read this buf nil (future-handler fut))
       fut))
   (^void read [this ^ByteBuffer buf att ^CompletionHandler handler]
     (letfn [(read-buffer []
@@ -47,7 +47,7 @@
           (read-buffer)))))
   (^Future write [this ^ByteBuffer buf]
     (let [fut (CompletableFuture.)]
-      (.write this buf nil (FutureCompletionHandler. fut))
+      (.write this buf nil (future-handler fut))
       fut))
   (^void write [this ^ByteBuffer buf att ^CompletionHandler handler]
     (letfn [(write-buffer []
