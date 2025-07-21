@@ -30,8 +30,8 @@
       (is (thrown? ExecutionException (.get fut)))))
   (testing "writes"
     (let [ch   (ch/async-channel)
-          fut1 (.write ch (ByteBuffer/wrap (.getBytes "hello" ascii)))
-          fut2 (.write ch (ByteBuffer/wrap (.getBytes "world" ascii)))]
+          fut1 (write-str ch "hello")
+          fut2 (write-str ch "world")]
       (is (.isDone fut1))
       (is (= 5 (.get fut1 1 TimeUnit/SECONDS)))
       (.close ch)
@@ -72,7 +72,7 @@
       (is (.isDone fut))
       (is (= 5 (.get fut 1 TimeUnit/SECONDS))))))
 
-(deftest read-wait-test
+(deftest future-read-wait-test
   (let [ch  (ch/async-channel)
         buf (ByteBuffer/allocate 5)
         fut (.read ch buf)]
@@ -81,6 +81,25 @@
     (is (.isDone fut))
     (is (= 5 (.get fut 1 TimeUnit/SECONDS)))
     (is (= [104 101 108 108 111] (seq (.array buf))))))
+
+(deftest read-wait-test
+  (let [ch    (ch/async-channel)
+        rbuf  (ByteBuffer/allocate 5)
+        rdone (promise)
+        rfail (promise)
+        wdone (promise)
+        wfail (promise)]
+    (ch/read ch rbuf rdone rfail)
+    (is (not (realized? rdone)))
+    (is (not (realized? rfail)))
+    (ch/write ch (ByteBuffer/wrap (.getBytes "hello" ascii)) wdone wfail)
+    (is (realized? wdone))
+    (is (realized? rdone))
+    (is (not (realized? wfail)))
+    (is (not (realized? rfail)))
+    (is (= 5 (deref wdone 1000 :fail)))
+    (is (= 5 (deref rdone 1000 :fail)))
+    (is (= [104 101 108 108 111] (seq (.array rbuf))))))
 
 (deftest multi-thread-test
   (let [ch   (ch/async-channel)

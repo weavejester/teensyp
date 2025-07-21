@@ -1,6 +1,7 @@
 (ns teensyp.channel
   "A namespace of utility functions for interoperating with Java channels and
   streams."
+  (:refer-clojure :exclude [read])
   (:require [teensyp.buffer :as buf])
   (:import [java.io InputStream OutputStream]
            [java.nio ByteBuffer]
@@ -9,12 +10,17 @@
             ReadPendingException WritePendingException]
            [java.util.concurrent CompletableFuture Future]))
 
-(defn- future-handler [^CompletableFuture fut]
+(defn- future-handler ^CompletionHandler [^CompletableFuture fut]
   (reify CompletionHandler
     (completed [_ result _] (.complete fut result))
     (failed [_ ex _] (.completeExceptionally fut ex))))
 
-(deftype AsyncByteBufferChannel
+(defn- fn-handler ^CompletionHandler [complete fail]
+  (reify CompletionHandler
+    (completed [_ result _] (complete result))
+    (failed [_ ex _] (fail ex))))
+
+(deftype AsyncChannelImpl
          [^:volatile-mutable ^ByteBuffer buffer
           ^:volatile-mutable pending-read
           ^:volatile-mutable pending-write
@@ -86,7 +92,19 @@
   until it is fully read. This avoids the use of an intermediate buffer, but
   care needs to be taken around the reuse of buffers."
   ^AsynchronousByteChannel []
-  (AsyncByteBufferChannel. nil nil nil false))
+  (AsyncChannelImpl. nil nil nil false))
+
+(defn read
+  "Asynchronously read from an `AsynchronousByteChannel`, putting the result
+  in buf, and calling either the complete or fail callback."
+  [^AsynchronousByteChannel ch ^ByteBuffer buf complete fail]
+  (.read ch buf nil (fn-handler complete fail)))
+
+(defn write
+  "Asynchronously write to an `AsynchronousByteChannel`, putting the result
+  in buf, and calling either the complete or fail callback."
+  [^AsynchronousByteChannel ch ^ByteBuffer buf complete fail]
+  (.write ch buf nil (fn-handler complete fail)))
 
 (defn ->input-stream
   "Convert an `AsynchronousByteChannel` into a blocking `InputStream` instance."
