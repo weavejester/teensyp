@@ -5,6 +5,7 @@
             :url "https://www.eclipse.org/legal/epl-2.0/"}
   :dependencies [[org.clojure/clojure "1.12.1"]]
   :plugins [[lein-codox "0.10.8"]]
+  :source-paths ["src/clj"]
   :codox {:output-path "codox"
           :metadata {:doc/format :markdown}}
   :repl-options {:init-ns teensyp.core})
