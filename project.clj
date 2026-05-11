@@ -6,6 +6,7 @@
   :dependencies [[org.clojure/clojure "1.12.1"]]
   :plugins [[lein-codox "0.10.8"]]
   :source-paths ["src/clj"]
+  :java-source-paths ["src/java"]
   :codox {:output-path "codox"
           :metadata {:doc/format :markdown}}
   :repl-options {:init-ns teensyp.core})
