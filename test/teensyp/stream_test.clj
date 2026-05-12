@@ -6,8 +6,7 @@
             [teensyp.stream :as stream])
   (:import [java.io InputStream OutputStream]
            [java.nio ByteBuffer]
-           [java.nio.charset StandardCharsets]
-           [java.util.concurrent Executors]))
+           [java.nio.charset StandardCharsets]))
 
 (defn- ->bytes [^String s]
   (.getBytes s StandardCharsets/US_ASCII))
@@ -16,10 +15,8 @@
   (buf/buffer->str b StandardCharsets/US_ASCII))
 
 (deftest test-stream-handler
-  (let [executor (Executors/newFixedThreadPool 2)
-        error    (promise)
+  (let [error    (promise)
         handler  (stream/stream-handler
-                  executor
                   (fn [^InputStream in ^OutputStream out]
                     (try
                       (with-open [r (io/reader in)

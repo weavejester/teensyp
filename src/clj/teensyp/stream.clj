@@ -2,7 +2,7 @@
   (:require [teensyp.server :as t])
   (:import [java.io IOException]
            [java.nio ByteBuffer]
-           [java.util.concurrent ExecutorService]
+           [java.util.concurrent Executors ExecutorService]
            [java.util.concurrent.locks Condition Lock ReentrantLock]
            [teensyp IInputStream IOutputStream
                     ProxyInputStream ProxyOutputStream]))
@@ -33,14 +33,17 @@
      (.lock lock#)
      (try ~@body (finally (.unlock lock#)))))
 
+(defn- new-default-executor []
+  (Executors/newFixedThreadPool 32))
+
 (defn stream-handler
-  ([executor handler]
-   (stream-handler executor handler {}))
-  ([^ExecutorService executor handler
-    {:keys [read-buffer-size] :or {read-buffer-size 8192}}]
+  ([handler]
+   (stream-handler handler {}))
+  ([handler {:keys [executor read-buffer-size] :or {read-buffer-size 8192}}]
    (fn
      ([write]
-      (let [write-lock (ReentrantLock.)
+      (let [executor   (or executor (new-default-executor))
+            write-lock (ReentrantLock.)
             read-lock  (ReentrantLock.)
             can-read   (.newCondition read-lock)
             buffer     (.flip (ByteBuffer/allocate read-buffer-size))
@@ -70,7 +73,7 @@
                              (vreset! closed? true))))
             input      (input-stream readf closef)
             output     (output-stream writef closef)]
-        (.submit executor ^Runnable #(handler input output))
+        (.submit ^ExecutorService executor ^Runnable #(handler input output))
         {:buffer     buffer
          :can-read   can-read 
          :closed?    closed?
