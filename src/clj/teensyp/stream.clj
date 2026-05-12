@@ -1,4 +1,5 @@
 (ns teensyp.stream
+  "A namespace of utility functions for integrating streams into Teensyp."
   (:require [teensyp.server :as t])
   (:import [java.io IOException]
            [java.nio ByteBuffer]
@@ -8,6 +9,12 @@
                     ProxyInputStream ProxyOutputStream]))
 
 (defn input-stream
+  "Create an InputStream from a read and optional close function. The read
+  function maps to the `.read` method on the InputStream class and takes 3
+  arguments: a byte array to receive the data, an offset and a length. The read
+  function should return the number of bytes read, or -1 if the stream is
+  closed. The close function maps to the `.close` method and takes zero
+  arguments."
   ([readf]
    (input-stream readf (fn [])))
   ([readf closef]
@@ -17,6 +24,12 @@
       (close [_] (closef))))))
 
 (defn output-stream
+  "Create an OutputStream from a write function and optional close and
+  flush functions. The write function maps to the `.write` method on the
+  OutputStream class and takes 3 arguments: a byte array with the data to send,
+  an offset and a length. The close function maps to the `.close` method and
+  takes zero arguments. Similarly the flush function maps to the `.flush`
+  method and also takes zero arguments."
   ([writef]
    (output-stream writef (fn [])))
   ([writef closef]
@@ -37,6 +50,12 @@
   (Executors/newFixedThreadPool 32))
 
 (defn stream-handler
+  "Create a Teensyp server handler from a function that takes an InputStream
+  and OutputStream as arguments. Accepts an options map with the following keys:
+
+  :executor - an executor for running the handler function, defaults to a fixed
+              thread pool of 32 threads
+  :read-buffer-size - the size in bytes of the read buffer, defaults to 8K"
   ([handler]
    (stream-handler handler {}))
   ([handler {:keys [executor read-buffer-size] :or {read-buffer-size 8192}}]
