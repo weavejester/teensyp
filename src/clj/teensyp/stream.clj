@@ -44,35 +44,32 @@
            buffer     (.flip (ByteBuffer/allocate read-buffer-size))
            closed?    (volatile! false)
            closef     #(write t/CLOSE) 
-           input
-           (input-stream
-            (fn [b off len]
-              (with-lock read-lock
-                (loop []
-                  (cond
-                    @closed?   -1
-                    (zero? len) 0
-                    (not (.hasRemaining buffer)) (do (.await can-read) (recur))
-                    :else
-                    (let [len (min len (.remaining buffer))]
-                      (.get buffer b off len)
-                      (when (.hasRemaining buffer) (.signal can-read))
-                      len)))))
-            closef)
-           output
-           (output-stream
-            (fn [b off len]
-              (with-lock write-lock
-                (if @closed?
-                  (throw (IOException. "Closed"))
-                  (write (ByteBuffer/wrap b off len)))))
-            closef)]
+           readf      (fn [b off len]
+                        (with-lock read-lock
+                          (loop []
+                            (cond
+                              @closed?   -1
+                              (zero? len) 0
+                              (not (.hasRemaining buffer))
+                              (do (.await can-read) (recur))
+                              :else
+                              (let [len (min len (.remaining buffer))]
+                                (.get buffer b off len)
+                                (when (.hasRemaining buffer) (.signal can-read))
+                                len)))))
+           writef     (fn [b off len]
+                        (with-lock write-lock
+                          (if @closed?
+                            (throw (IOException. "Closed"))
+                            (write (ByteBuffer/wrap b off len)))))
+           input      (input-stream readf closef)
+           output     (output-stream writef closef)]
        (.submit executor ^Runnable #(handler input output))
-       {:read-lock  read-lock
-        :write-lock write-lock
+       {:buffer     buffer
         :can-read   can-read 
-        :buffer     buffer
-        :closed?    closed?}))
+        :closed?    closed?
+        :read-lock  read-lock
+        :write-lock write-lock}))
     ([{:keys [buffer can-read read-lock] :as state} buf _write]
      (with-lock read-lock
        (.compact buffer)
