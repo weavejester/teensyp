@@ -8,5 +8,4 @@
   :source-paths ["src/clj"]
   :java-source-paths ["src/java"]
   :codox {:output-path "codox"
-          :metadata {:doc/format :markdown}}
-  :repl-options {:init-ns teensyp.core})
+          :metadata {:doc/format :markdown}})
