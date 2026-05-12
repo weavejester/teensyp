@@ -34,19 +34,21 @@
      (try ~@body (finally (.unlock lock#)))))
 
 (defn stream-handler
-  [^ExecutorService executor handler
-   {:keys [read-buffer-size] :or {read-buffer-size 8192}}]
-  (fn
-    ([write]
-     (let [write-lock (ReentrantLock.)
-           read-lock  (ReentrantLock.)
-           can-read   (.newCondition read-lock)
-           buffer     (.flip (ByteBuffer/allocate read-buffer-size))
-           closed?    (volatile! false)
-           readf      (fn [b off len]
-                        (with-lock read-lock
-                          (loop []
-                            (cond
+  ([executor handler]
+   (stream-handler executor handler {}))
+  ([^ExecutorService executor handler
+    {:keys [read-buffer-size] :or {read-buffer-size 8192}}]
+   (fn
+     ([write]
+      (let [write-lock (ReentrantLock.)
+            read-lock  (ReentrantLock.)
+            can-read   (.newCondition read-lock)
+            buffer     (.flip (ByteBuffer/allocate read-buffer-size))
+            closed?    (volatile! false)
+            readf      (fn [b off len]
+                         (with-lock read-lock
+                           (loop []
+                             (cond
                               @closed?   -1
                               (zero? len) 0
                               (not (.hasRemaining buffer))
@@ -56,36 +58,36 @@
                                 (.get buffer b off len)
                                 (when (.hasRemaining buffer) (.signal can-read))
                                 len)))))
-           writef     (fn [b off len]
-                        (with-lock write-lock
-                          (if @closed?
-                            (throw (IOException. "Closed"))
-                            (write (ByteBuffer/wrap b off len)))))
-           closef     (fn []
-                        (with-lock write-lock
-                          (when-not @closed?
-                            (write t/CLOSE)
-                            (vreset! closed? true))))
-           input      (input-stream readf closef)
-           output     (output-stream writef closef)]
-       (.submit executor ^Runnable #(handler input output))
-       {:buffer     buffer
-        :can-read   can-read 
-        :closed?    closed?
-        :read-lock  read-lock
-        :write-lock write-lock}))
-    ([{:keys [buffer can-read read-lock] :as state} buf _write]
-     (with-lock read-lock
-       (.compact buffer)
-       (.put buffer buf)
-       (.flip buffer)
-       (.signal ^Condition can-read)
-       state))
-    ([{:keys [read-lock write-lock can-read closed?]} _ex]
-     (with-lock read-lock
-       (with-lock write-lock
-         (vreset! closed? true)
-         (.signal ^Condition can-read))))))
+            writef     (fn [b off len]
+                         (with-lock write-lock
+                           (if @closed?
+                             (throw (IOException. "Closed"))
+                             (write (ByteBuffer/wrap b off len)))))
+            closef     (fn []
+                         (with-lock write-lock
+                           (when-not @closed?
+                             (write t/CLOSE)
+                             (vreset! closed? true))))
+            input      (input-stream readf closef)
+            output     (output-stream writef closef)]
+        (.submit executor ^Runnable #(handler input output))
+        {:buffer     buffer
+         :can-read   can-read 
+         :closed?    closed?
+         :read-lock  read-lock
+         :write-lock write-lock}))
+     ([{:keys [buffer can-read read-lock] :as state} buf _write]
+      (with-lock read-lock
+        (.compact buffer)
+        (.put buffer buf)
+        (.flip buffer)
+        (.signal ^Condition can-read)
+        state))
+     ([{:keys [read-lock write-lock can-read closed?]} _ex]
+      (with-lock read-lock
+        (with-lock write-lock
+          (vreset! closed? true)
+          (.signal ^Condition can-read)))))))
      
         
                           

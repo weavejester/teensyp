@@ -30,8 +30,7 @@
                           (.write w (str "bar" x)))
                         (.flush w))
                       (catch Exception ex
-                        (deliver error ex))))
-                  {})
+                        (deliver error ex)))))
         buffer   (ByteBuffer/allocate 128)
         output   (atom [])
         write    #(let [x (if (instance? ByteBuffer %) (<-buffer %) %)]
