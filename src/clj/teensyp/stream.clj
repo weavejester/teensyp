@@ -13,7 +13,7 @@
   ([readf closef]
    (ProxyInputStream.
     (reify IInputStream
-      (read [_ b off len] (readf b off len))
+      (read [_ b off len] (if (zero? len) 0 (readf b off len)))
       (close [_] (closef))))))
 
 (defn output-stream
@@ -24,7 +24,7 @@
   ([writef closef flushf]
    (ProxyOutputStream.
     (reify IOutputStream
-      (write [_ b off len] (writef b off len))
+      (write [_ b off len] (when-not (zero? len) (writef b off len)))
       (close [_] (closef))
       (flush [_] (flushf))))))
 
@@ -52,8 +52,7 @@
                          (with-lock read-lock
                            (loop []
                              (cond
-                              @closed?   -1
-                              (zero? len) 0
+                              @closed? -1
                               (not (.hasRemaining buffer))
                               (do (.await can-read) (recur))
                               :else
