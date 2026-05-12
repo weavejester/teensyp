@@ -7,5 +7,6 @@
   :plugins [[lein-codox "0.10.8"]]
   :source-paths ["src/clj"]
   :java-source-paths ["src/java"]
+  :global-vars {*warn-on-reflection* true}
   :codox {:output-path "codox"
           :metadata {:doc/format :markdown}})

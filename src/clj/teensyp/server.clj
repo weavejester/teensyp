@@ -74,7 +74,7 @@
 (defn- unset-flag [key flag]
   (update-flags key #(bit-and-not % flag)))
 
-(defn- has-flag? [key flag]
+(defn- has-flag? [^SelectionKey key flag]
   (-> key .attachment :flags deref (bit-flag-set? flag)))
 
 (defn- ex-write-queue-full []
@@ -131,8 +131,8 @@
 
 (defn- handle-accept
   [^SelectionKey key submit {:keys [handler] :as opts}]
-  (let [^Selector selector (-> key .selector)
-        ^SocketChannel  ch (-> key .channel .accept)]
+  (let [^Selector selector (.selector key)
+        ^SocketChannel  ch (.accept ^ServerSocketChannel (.channel key))]
     (.configureBlocking ch false)
     (let [{:keys [state] :as context} (new-context opts)
           key (.register ch selector 0 context)]

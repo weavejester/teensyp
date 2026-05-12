@@ -78,7 +78,7 @@
          :closed?    closed?
          :read-lock  read-lock
          :write-lock write-lock}))
-     ([{:keys [buffer can-read read-lock] :as state} buf _write]
+     ([{:keys [buffer can-read read-lock] :as state} ^ByteBuffer buf _write]
       (with-lock read-lock
         (doto ^ByteBuffer buffer .compact (.put buf) .flip)
         (.signal ^Condition can-read)

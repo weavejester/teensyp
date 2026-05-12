@@ -24,7 +24,7 @@
 (defn index-of
   "Find the first index of the specified byte in a buffer, starting from the
   buffer's position."
-  [^ByteBuffer buffer needle]
+  ^long [^ByteBuffer buffer needle]
   (let [limit (.limit buffer)]
     (loop [index (.position buffer)]
       (if (< index limit)
@@ -33,7 +33,7 @@
           (recur (inc index)))
         -1))))
 
-(defn- matches-tail-bytes? [^ByteBuffer buffer index ^bytes needle]
+(defn- matches-tail-bytes? [^ByteBuffer buffer ^long index ^bytes needle]
   (loop [i (inc index), j 1]
     (if (< j (alength needle))
       (when (= (.get buffer i) (aget needle j))
