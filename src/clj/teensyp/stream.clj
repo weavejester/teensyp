@@ -65,7 +65,7 @@
               (with-lock write-lock
                 (if @closed?
                   (throw (IOException. "Closed"))
-                  (do (write (ByteBuffer/wrap b off len)) len))))
+                  (write (ByteBuffer/wrap b off len)))))
             closef)]
        (.submit executor ^Runnable #(handler input output))
        {:read-lock  read-lock
