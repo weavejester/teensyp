@@ -43,7 +43,6 @@
            can-read   (.newCondition read-lock)
            buffer     (.flip (ByteBuffer/allocate read-buffer-size))
            closed?    (volatile! false)
-           closef     #(write t/CLOSE) 
            readf      (fn [b off len]
                         (with-lock read-lock
                           (loop []
@@ -62,6 +61,11 @@
                           (if @closed?
                             (throw (IOException. "Closed"))
                             (write (ByteBuffer/wrap b off len)))))
+           closef     (fn []
+                        (with-lock write-lock
+                          (when-not @closed?
+                            (write t/CLOSE)
+                            (vreset! closed? true))))
            input      (input-stream readf closef)
            output     (output-stream writef closef)]
        (.submit executor ^Runnable #(handler input output))
