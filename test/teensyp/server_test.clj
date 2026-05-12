@@ -11,7 +11,7 @@
   (with-open [server (tcp/start-server {:port 3456})]
     (is (instance? java.io.Closeable server))))
 
-(defn ->buffer [s]
+(defn- ->buffer [s]
   (buf/str->buffer s StandardCharsets/US_ASCII))
 
 (defn- hello-handler
