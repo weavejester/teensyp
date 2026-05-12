@@ -3,9 +3,9 @@
   (:import [java.io IOException]
            [java.nio ByteBuffer]
            [java.util.concurrent ExecutorService]
-           [java.util.concurrent.locks Condition ReentrantLock]
+           [java.util.concurrent.locks Condition Lock ReentrantLock]
            [teensyp IInputStream IOutputStream
-                   ProxyInputStream ProxyOutputStream]))
+                    ProxyInputStream ProxyOutputStream]))
 
 (defn input-stream
   ([readf]
@@ -28,6 +28,11 @@
       (close [_] (closef))
       (flush [_] (flushf))))))
 
+(defmacro ^:private with-lock [lock & body]
+  `(let [^Lock lock# ~lock]
+     (.lock lock#)
+     (try ~@body (finally (.unlock lock#)))))
+
 (defn stream-handler
   [^ExecutorService executor handler
    {:keys [read-buffer-size] :or {read-buffer-size 8192}}]
@@ -36,14 +41,13 @@
      (let [write-lock (ReentrantLock.)
            read-lock  (ReentrantLock.)
            can-read   (.newCondition read-lock)
-           buffer     (doto (ByteBuffer/allocate read-buffer-size) .flip)
+           buffer     (.flip (ByteBuffer/allocate read-buffer-size))
            closed?    (volatile! false)
            closef     #(write t/CLOSE) 
            input
            (input-stream
             (fn [b off len]
-              (.lock read-lock)
-              (try
+              (with-lock read-lock
                 (loop []
                   (cond
                     @closed?   -1
@@ -53,18 +57,15 @@
                     (let [len (min len (.remaining buffer))]
                       (.get buffer b off len)
                       (when (.hasRemaining buffer) (.signal can-read))
-                      len)))
-                (finally (.unlock read-lock))))
+                      len)))))
             closef)
            output
            (output-stream
             (fn [b off len]
-              (try
-                (.lock write-lock)
+              (with-lock write-lock
                 (if @closed?
                   (throw (IOException. "Closed"))
-                  (do (write (ByteBuffer/wrap b off len)) len))
-                (finally (.unlock write-lock))))
+                  (do (write (ByteBuffer/wrap b off len)) len))))
             closef)]
        (.submit executor ^Runnable #(handler input output))
        {:read-lock  read-lock
@@ -73,23 +74,17 @@
         :buffer     buffer
         :closed?    closed?}))
     ([{:keys [buffer can-read read-lock] :as state} buf _write]
-     (.lock ^ReentrantLock read-lock)
-     (try
+     (with-lock read-lock
        (.compact buffer)
        (.put buffer buf)
        (.flip buffer)
        (.signal ^Condition can-read)
-       state
-       (finally (.unlock ^ReentrantLock read-lock))))
+       state))
     ([{:keys [read-lock write-lock can-read closed?]} _ex]
-     (.lock ^ReentrantLock read-lock)
-     (.lock ^ReentrantLock write-lock)
-     (try
-       (vreset! closed? true)
-       (.signal ^Condition can-read)
-       (finally
-         (.unlock ^ReentrantLock read-lock)
-         (.unlock ^ReentrantLock write-lock))))))
+     (with-lock read-lock
+       (with-lock write-lock
+         (vreset! closed? true)
+         (.signal ^Condition can-read))))))
      
         
                           
