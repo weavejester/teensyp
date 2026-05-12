@@ -1,6 +1,6 @@
 (ns teensyp.server
   "The main server namespace."
-  (:import [java.io IOException]
+  (:import [java.io Closeable IOException]
            [java.net InetSocketAddress]
            [java.nio ByteBuffer]
            [java.nio.channels Selector SelectionKey
@@ -250,7 +250,7 @@
   The handler function is guaranteed to execute in serial per channel. That is,
   the accept will always be first, the close will always be last, and reads
   will always be sequential."
-  [{:keys [port executor] :as opts}]
+  ^Closeable [{:keys [port executor] :as opts}]
   {:pre [(int? port)]}
   (let [server-ch (server-socket-channel port)
         selector  (server-selector server-ch)

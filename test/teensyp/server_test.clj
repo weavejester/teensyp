@@ -3,7 +3,8 @@
             [clojure.test :refer [deftest is]]
             [teensyp.server :as tcp]
             [teensyp.buffer :as buf])
-  (:import [java.net Socket]
+  (:import [java.io BufferedReader]
+           [java.net Socket]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]))
 
@@ -26,7 +27,7 @@
                  {:port 3457
                   :handler hello-handler})]
     (let [sock (Socket. "localhost" 3457)]
-      (with-open [reader (io/reader (.getInputStream sock))]
+      (with-open [reader ^BufferedReader (io/reader (.getInputStream sock))]
         (is (= "hello" (.readLine reader)))))))
 
 (defn- <-buffer [^ByteBuffer buf]
@@ -47,7 +48,7 @@
                   :handler echo-handler})]
     (let [sock (Socket. "localhost" 3458)]
       (with-open [writer (io/writer (.getOutputStream sock))]
-        (with-open [reader (io/reader (.getInputStream sock))]
+        (with-open [reader ^BufferedReader (io/reader (.getInputStream sock))]
           (doto writer (.write "foo\n") .flush)
           (is (= "foo" (.readLine reader)))
           (doto writer (.write "bar\n") .flush)
@@ -80,7 +81,7 @@
                   :handler reverse-line-handler})]
     (with-open [sock (Socket. "localhost" 3460)]
       (with-open [writer (io/writer (.getOutputStream sock))]
-        (with-open [reader (io/reader (.getInputStream sock))]
+        (with-open [reader ^BufferedReader (io/reader (.getInputStream sock))]
           (doto writer (.write "foo\r\n") .flush)
           (is (= "oof" (.readLine reader)))
           (doto writer (.write "bar\r\n") .flush)
@@ -147,7 +148,7 @@
                     ([_ _ _])
                     ([_ _]))})]
     (with-open [sock (Socket. "localhost" 3463)]
-      (with-open [reader (io/reader (.getInputStream sock))]
+      (with-open [reader ^BufferedReader (io/reader (.getInputStream sock))]
         (is (= "foobar" (.readLine reader)))))))
 
 (deftest server-write-limit-test
@@ -168,7 +169,7 @@
                       ([_ _ _])
                       ([_ _]))})]
       (with-open [sock (Socket. "localhost" 3464)]
-        (with-open [reader (io/reader (.getInputStream sock))]
+        (with-open [reader ^BufferedReader (io/reader (.getInputStream sock))]
           (is (= "1" (.readLine reader)))
           (is (= "2" (.readLine reader)))))
       (is (= [{:err ::tcp/write-queue-over-capacity}

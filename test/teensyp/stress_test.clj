@@ -3,7 +3,8 @@
             [clojure.test :refer [deftest is]]
             [teensyp.server :as tcp]
             [teensyp.buffer :as buf])
-  (:import [java.net Socket]
+  (:import [java.io BufferedReader]
+           [java.net Socket]
            [java.nio.charset StandardCharsets]))
 
 (def ascii
@@ -19,23 +20,25 @@
          (recur)))))
   ([_ _]))
 
-(defn- server-output-sum [input port timeout]
+(defn- server-output-sum [input ^long port ^long timeout]
   (let [output-sum (atom 0)]
     (with-open [_ (tcp/start-server
                    {:port port
                     :handler double-handler
                     :write-queue-size 256})]
       (with-open [sock (Socket. "localhost" port)]
-        (let [write-thread (Thread.
-                            #(let [w (io/writer (.getOutputStream sock))]
-                               (doseq [i input]
-                                 (.write w (str i "\n"))
-                                 (.flush w))))
-              read-thread  (Thread.
-                            #(let [r (io/reader (.getInputStream sock))]
-                               (dotimes [_ (count input)]
-                                 (let [x (Integer/parseInt (.readLine r))]
-                                   (swap! output-sum + x)))))]
+        (let [write-thread
+              (Thread.
+               #(let [w (io/writer (.getOutputStream sock))]
+                  (doseq [i input]
+                    (.write w (str i "\n"))
+                    (.flush w))))
+              read-thread 
+              (Thread.
+               #(let [r ^BufferedReader (io/reader (.getInputStream sock))]
+                  (dotimes [_ (count input)]
+                    (let [x (Integer/parseInt (.readLine r))]
+                      (swap! output-sum + x)))))]
           (.start write-thread)
           (.start read-thread)
           (.join read-thread timeout)

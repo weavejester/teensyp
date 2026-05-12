@@ -4,14 +4,14 @@
             [teensyp.buffer :as buf]
             [teensyp.server :as tcp]
             [teensyp.stream :as stream])
-  (:import [java.io InputStream OutputStream]
+  (:import [java.io BufferedReader InputStream OutputStream]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]))
 
-(defn- ->bytes [^String s]
+(defn- ->bytes ^bytes [^String s]
   (.getBytes s StandardCharsets/US_ASCII))
 
-(defn- <-buffer [b]
+(defn- <-buffer ^String [b]
   (buf/buffer->str b StandardCharsets/US_ASCII))
 
 (deftest test-stream-handler
@@ -19,13 +19,11 @@
         handler  (stream/stream-handler
                   (fn [^InputStream in ^OutputStream out]
                     (try
-                      (with-open [r (io/reader in)
+                      (with-open [r ^BufferedReader (io/reader in)
                                   w (io/writer out)]
                         (.write w (str "foo" (.readLine r)))
                         (.flush w)
-                        (let [x (.readLine r)]
-                          (.write w (str "bar" x)))
-                        (.flush w))
+                        (.write w (str "bar" (.readLine r))))
                       (catch Exception ex
                         (deliver error ex)))))
         buffer   (ByteBuffer/allocate 128)
