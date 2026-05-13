@@ -1,10 +1,11 @@
 (ns teensyp.stream
   "A namespace of utility functions for integrating streams into Teensyp."
-  (:require [teensyp.server :as t])
+  (:require [teensyp.concurrent :refer [with-lock]]
+            [teensyp.server :as t])
   (:import [java.io IOException]
            [java.nio ByteBuffer]
            [java.util.concurrent Executors ExecutorService]
-           [java.util.concurrent.locks Condition Lock ReentrantLock]
+           [java.util.concurrent.locks Condition ReentrantLock]
            [teensyp IInputStream IOutputStream
                     ProxyInputStream ProxyOutputStream]))
 
@@ -40,11 +41,6 @@
       (write [_ b off len] (when-not (zero? len) (writef b off len)))
       (close [_] (closef))
       (flush [_] (flushf))))))
-
-(defmacro ^:private with-lock [lock & body]
-  `(let [^Lock lock# ~lock]
-     (.lock lock#)
-     (try ~@body (finally (.unlock lock#)))))
 
 (defn- new-default-executor []
   (Executors/newFixedThreadPool 32))

@@ -1,5 +1,6 @@
 (ns teensyp.server
   "The main server namespace."
+  (:require [teensyp.concurrent :refer [with-lock]])
   (:import [java.io Closeable IOException]
            [java.net InetSocketAddress]
            [java.nio ByteBuffer]
@@ -7,7 +8,9 @@
             ServerSocketChannel SocketChannel]
            [java.util Queue]
            [java.util.concurrent ArrayBlockingQueue Executors ExecutorService]
-           [java.util.concurrent.atomic AtomicInteger]))
+           [java.util.concurrent.atomic AtomicInteger]
+           [java.util.concurrent.locks ReentrantLock]))
+           
 
 (def CLOSE
   "A unique identifier that can be passed to the write function of a handler
@@ -62,7 +65,7 @@
 
 (defn- update-flags [^SelectionKey key f]
   (let [vflags (-> key .attachment :flags)]
-    (locking key
+    (with-lock (-> key .attachment :lock)
       (let [flags (vswap! vflags f)]
         (when (.isValid key)
           (.interestOps key (interest-ops flags)))
@@ -111,6 +114,7 @@
            write-queue-size  64}}]
   {:write-queue (ArrayBlockingQueue. write-queue-size)
    :write-limit (AtomicInteger. write-buffer-size)
+   :lock        (ReentrantLock.)
    :flags       (volatile! 0)
    :state       (volatile! nil)
    :read-buffer (ByteBuffer/allocate read-buffer-size)
@@ -124,7 +128,7 @@
   (let [closef (-> key .attachment :closef)]
     (-> key .channel .close)
     (set-flag key closed)
-    (locking key
+    (with-lock (-> key .attachment :lock)
       (if (has-flag? key working)
         (vreset! closef #(close-key key submit ex handler))
         (close-key key submit ex handler)))))
