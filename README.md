@@ -92,7 +92,7 @@ The `start-server` function takes a number of options:
 
 ## License
 
-Copyright © 2025 James Reeves
+Copyright © 2026 James Reeves
 
 This program and the accompanying materials are made available under the
 terms of the Eclipse Public License 2.0 which is available at
