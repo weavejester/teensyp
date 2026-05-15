@@ -39,11 +39,10 @@ behaves.
    ;; to the output channel with the write function.
    (update state :read-bytes + (.remaining buffer)))
   ([state exception]
-   ;; With 2 arguments, we have the channel closing. If it closed due to an
+   ;; With 2 arguments, we have the channel close event. If it closed due to an
    ;; exception, that exception is passed as the second argument, otherwise it
    ;; will be nil.
-   (println "Total bytes:" (:read-bytes state))
-  ))
+   (println "Total bytes:" (:read-bytes state))))
 ```
 
 The handler maintains a `state`, which can be any Clojure data
@@ -71,7 +70,7 @@ TeensyP makes several guarantees that apply per-channel:
 - The 2-arity close is always called last.
 - The current handler call for the channel must finish before the next
   can begin.
-- The write queue queue must be empty before the handler is called.
+- The write queue must be empty before the handler is called.
 
 ### Server Options
 
