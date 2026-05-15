@@ -2,8 +2,9 @@
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is]]
             [teensyp.server :as tcp]
-            [teensyp.buffer :as buf])
-  (:import [java.io BufferedReader]
+            [teensyp.buffer :as buf]
+            [teensyp.stream :as stream])
+  (:import [java.io BufferedReader InputStream OutputStream]
            [java.net Socket]
            [java.nio.charset StandardCharsets]))
 
@@ -20,11 +21,21 @@
          (recur)))))
   ([_ _]))
 
-(defn- server-output-sum [input ^long port ^long timeout]
+(defn- stream-double-handler [^InputStream in ^OutputStream out]
+  (with-open [r ^BufferedReader (io/reader in)
+              w (io/writer out)]
+    (loop []
+      (when-some [s (.readLine r)]
+        (let [x (Integer/parseInt s)]
+          (.write w (str (* 2 x) "\n"))
+          (.flush w)
+          (recur))))))
+
+(defn- server-output-sum [handler input ^long port ^long timeout]
   (let [output-sum (atom 0)]
     (with-open [_ (tcp/start-server
                    {:port port
-                    :handler double-handler
+                    :handler handler
                     :write-queue-size 256})]
       (with-open [sock (Socket. "localhost" port)]
         (let [write-thread
@@ -50,8 +61,23 @@
         threads 16
         numbers (partition (/ amount threads) (shuffle (range amount)))
         sum     (/ (* (dec amount) amount) 2)
+        handler double-handler
         results (map-indexed
-                 (fn [i ns] (future (server-output-sum ns (+ 4567 i) 5000)))
+                 (fn [i xs]
+                   (future (server-output-sum handler xs (+ 4567 i) 5000)))
+                 numbers)]
+    (is (= (* 2 sum)
+           (time (reduce + (map deref results)))))))
+
+(deftest streaming-stress-test
+  (let [amount  4096
+        threads 8
+        numbers (partition (/ amount threads) (shuffle (range amount)))
+        sum     (/ (* (dec amount) amount) 2)
+        handler (stream/stream-handler stream-double-handler)
+        results (map-indexed
+                 (fn [i xs]
+                   (future (server-output-sum handler xs (+ 5678 i) 5000)))
                  numbers)]
     (is (= (* 2 sum)
            (time (reduce + (map deref results)))))))
