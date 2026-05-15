@@ -4,7 +4,7 @@
             [teensyp.server :as t])
   (:import [java.io IOException]
            [java.nio ByteBuffer]
-           [java.util.concurrent Executors ExecutorService]
+           [java.util.concurrent CountDownLatch Executors ExecutorService]
            [java.util.concurrent.locks Condition ReentrantLock]
            [teensyp IInputStream IOutputStream
                     ProxyInputStream ProxyOutputStream]))
@@ -45,6 +45,11 @@
 (defn- new-default-executor []
   (Executors/newFixedThreadPool 32))
 
+(defn- blocking [f x]
+  (let [latch (CountDownLatch. 1)]
+    (f x #(.countDown latch))
+    (.await latch)))
+
 (defn stream-handler
   "Create a Teensyp server handler from a function that takes an InputStream
   and OutputStream as arguments. Accepts an options map with the following keys:
@@ -79,12 +84,11 @@
                          (with-lock write-lock
                            (if @closed?
                              (throw (IOException. "Closed"))
-                             (doto (ByteBuffer/allocate len)
-                               (.put b off len) .flip write))))
+                             (blocking write (ByteBuffer/wrap b off len)))))
             closef     (fn []
                          (with-lock write-lock
                            (when-not @closed?
-                             (write t/CLOSE)
+                             (blocking write t/CLOSE)
                              (vreset! closed? true))))
             input      (input-stream readf closef)
             output     (output-stream writef closef)]

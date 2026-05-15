@@ -28,8 +28,10 @@
                         (deliver error ex)))))
         buffer   (ByteBuffer/allocate 128)
         output   (atom [])
-        write    #(let [x (if (instance? ByteBuffer %) (<-buffer %) %)]
-                    (swap! output conj x))
+        write    (fn [buf callback]
+                   (let [x (if (instance? ByteBuffer buf) (<-buffer buf) buf)]
+                     (swap! output conj x)
+                     (callback)))
         state   (handler write)]
     (.put buffer (->bytes "Hello\nWor"))
     (.flip buffer)
