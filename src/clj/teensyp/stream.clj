@@ -79,7 +79,8 @@
                          (with-lock write-lock
                            (if @closed?
                              (throw (IOException. "Closed"))
-                             (write (ByteBuffer/wrap b off len)))))
+                             (doto (ByteBuffer/allocate len)
+                               (.put b off len) .flip write))))
             closef     (fn []
                          (with-lock write-lock
                            (when-not @closed?
