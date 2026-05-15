@@ -8,8 +8,7 @@
            [java.net Socket]
            [java.nio.charset StandardCharsets]))
 
-(def ascii
-  StandardCharsets/US_ASCII)
+(def ascii StandardCharsets/US_ASCII)
 
 (defn- double-handler
   ([_])
@@ -31,53 +30,49 @@
           (.flush w)
           (recur))))))
 
-(defn- server-output-sum [handler input ^long port ^long timeout]
+(defn- server-output-sum [input ^long port ^long timeout]
   (let [output-sum (atom 0)]
-    (with-open [_ (tcp/start-server
-                   {:port port
-                    :handler handler
-                    :write-queue-size 256})]
-      (with-open [sock (Socket. "localhost" port)]
-        (let [write-thread
-              (Thread.
-               #(let [w (io/writer (.getOutputStream sock))]
-                  (doseq [i input]
-                    (.write w (str i "\n"))
-                    (.flush w))))
-              read-thread 
-              (Thread.
-               #(let [r ^BufferedReader (io/reader (.getInputStream sock))]
-                  (dotimes [_ (count input)]
-                    (let [x (Integer/parseInt (.readLine r))]
-                      (swap! output-sum + x)))))]
-          (.start write-thread)
-          (.start read-thread)
-          (.join read-thread timeout)
-          (.join write-thread timeout)
-          @output-sum)))))
+    (with-open [sock (Socket. "localhost" port)]
+      (let [write-thread
+            (Thread.
+             #(let [w (io/writer (.getOutputStream sock))]
+                (doseq [i input]
+                  (.write w (str i "\n"))
+                  (.flush w))))
+            read-thread 
+            (Thread.
+             #(let [r ^BufferedReader (io/reader (.getInputStream sock))]
+                (dotimes [_ (count input)]
+                  (let [x (Integer/parseInt (.readLine r))]
+                    (swap! output-sum + x)))))]
+        (.start write-thread)
+        (.start read-thread)
+        (.join read-thread timeout)
+        (.join write-thread timeout)
+        @output-sum))))
 
 (deftest input-output-stress-test
-  (let [amount  16384
-        threads 16
-        numbers (partition (/ amount threads) (shuffle (range amount)))
-        sum     (/ (* (dec amount) amount) 2)
-        handler double-handler
-        results (map-indexed
-                 (fn [i xs]
-                   (future (server-output-sum handler xs (+ 4567 i) 5000)))
-                 numbers)]
-    (is (= (* 2 sum)
-           (time (reduce + (map deref results)))))))
+  (with-open [_ (tcp/start-server
+                 {:port 4567
+                  :handler double-handler
+                  :write-queue-size 256})]
+    (let [amount  16384
+          threads 16
+          numbers (partition (/ amount threads) (shuffle (range amount)))
+          sum     (/ (* (dec amount) amount) 2)
+          results (map #(future (server-output-sum % 4567 5000)) numbers)]
+      (is (= (* 2 sum)
+             (time (reduce + (map deref results))))))))
 
 (deftest streaming-stress-test
-  (let [amount  4096
-        threads 8
-        numbers (partition (/ amount threads) (shuffle (range amount)))
-        sum     (/ (* (dec amount) amount) 2)
-        handler (stream/stream-handler stream-double-handler)
-        results (map-indexed
-                 (fn [i xs]
-                   (future (server-output-sum handler xs (+ 5678 i) 5000)))
-                 numbers)]
-    (is (= (* 2 sum)
-           (time (reduce + (map deref results)))))))
+  (with-open [_ (tcp/start-server
+                 {:port 4568
+                  :handler (stream/stream-handler stream-double-handler)
+                  :write-queue-size 256})]
+    (let [amount  4096
+          threads 8
+          numbers (partition (/ amount threads) (shuffle (range amount)))
+          sum     (/ (* (dec amount) amount) 2)
+          results (map #(future (server-output-sum % 4568 5000)) numbers)]
+      (is (= (* 2 sum)
+             (time (reduce + (map deref results))))))))
