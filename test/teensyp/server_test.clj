@@ -1,6 +1,6 @@
 (ns teensyp.server-test
   (:require [clojure.java.io :as io]
-            [clojure.test :refer [deftest is]]
+            [clojure.test :refer [deftest is testing]]
             [teensyp.server :as tcp]
             [teensyp.buffer :as buf])
   (:import [java.io BufferedReader]
@@ -175,3 +175,34 @@
       (is (= [{:err ::tcp/write-queue-over-capacity}
               {:err ::tcp/write-queue-full}]
              (mapv ex-data @exceptions))))))
+
+(deftest server-socket-exception-test
+  (testing "Exception on init"
+    (let [error (promise)]
+      (with-open [_ (tcp/start-server
+                     {:port 3465
+                      :handler
+                      (fn
+                        ([_] (throw (ex-info "Testing" {})))
+                        ([_ _ _])
+                        ([_ ex] (deliver error ex)))})]
+        (Socket. "localhost" 3465)
+        (let [err (deref error 5000 :timeout)]
+          (is (instance? clojure.lang.ExceptionInfo err))
+          (is (= "Testing" (ex-message err)))))))
+  (testing "Exception on message receive"
+    (let [error (promise)]
+      (with-open [_ (tcp/start-server
+                     {:port 3466
+                      :handler
+                      (fn
+                        ([_])
+                        ([_ buf _] (throw (ex-info (<-buffer buf) {})))
+                        ([_ ex] (deliver error ex)))})]
+        (with-open [sock (Socket. "localhost" 3466)]
+          (with-open [writer (io/writer (.getOutputStream sock))]
+            (.write writer "Hello World")
+            (.flush writer)))
+        (let [err (deref error 5000 :timeout)]
+          (is (instance? clojure.lang.ExceptionInfo err))
+          (is (= "Hello World" (ex-message err))))))))

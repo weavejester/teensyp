@@ -142,6 +142,8 @@
           key (.register ch selector 0 context)]
       (set-flag key working)
       (submit #(try (vreset! state (handler (writer key)))
+                    (catch Exception ex
+                      (handle-close key submit ex opts))
                     (finally
                       (let [flags (unset-flag key working)]
                         (if (bit-flag-set? flags closed)
@@ -184,6 +186,8 @@
         (do (.flip read-buffer)
             (set-flag key working)
             (submit #(try (vswap! state handler read-buffer (writer key))
+                          (catch Exception ex
+                            (handle-close key submit ex opts))
                           (finally
                             (.compact read-buffer)
                             (let [flags (unset-flag key working)]
