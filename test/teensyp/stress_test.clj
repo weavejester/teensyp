@@ -13,22 +13,26 @@
 (defn- double-handler
   ([_])
   ([_ buffer write]
-   (loop []
-     (when-some [s (buf/read-line buffer ascii)]
-       (let [x (Integer/parseInt s)]
-         (write (buf/str->buffer (str (* 2 x) "\n") ascii))
-         (recur)))))
+   (try (loop []
+          (when-some [s (buf/read-line buffer ascii)]
+            (let [x (Integer/parseInt s)]
+              (write (buf/str->buffer (str (* 2 x) "\n") ascii))
+              (recur))))
+        (catch Exception ex
+          (prn ex))))
   ([_ _]))
 
 (defn- stream-double-handler [^InputStream in ^OutputStream out]
   (with-open [r ^BufferedReader (io/reader in)
               w (io/writer out)]
-    (loop []
-      (when-some [s (.readLine r)]
-        (let [x (Integer/parseInt s)]
-          (.write w (str (* 2 x) "\n"))
-          (.flush w)
-          (recur))))))
+    (try (loop[]
+           (when-some [s (.readLine r)]
+             (let [x (Integer/parseInt s)]
+               (.write w (str (* 2 x) "\n"))
+               (.flush w)
+               (recur))))
+         (catch Exception ex
+           (prn ex)))))
 
 (defn- server-output-sum [input ^long port ^long timeout]
   (let [output-sum (atom 0)]
@@ -67,8 +71,7 @@
 (deftest streaming-stress-test
   (with-open [_ (tcp/start-server
                  {:port 4568
-                  :handler (stream/stream-handler stream-double-handler)
-                  :write-queue-size 256})]
+                  :handler (stream/stream-handler stream-double-handler)})]
     (let [amount  4096
           threads 8
           numbers (partition (/ amount threads) (shuffle (range amount)))
