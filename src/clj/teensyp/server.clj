@@ -85,13 +85,20 @@
   ([socket]          (-write socket ::close nil))
   ([socket callback] (-write socket ::close callback)))
 
+;; We send pause/resume events to the write queue. This ensures they execute
+;; in the same thread as the server selector, wakes the selector up, and
+;; provides a callback. While we could create a separate system for handling
+;; pause/resume, it's probably not worth the overhead.
+
 (defn pause-reads
   "Pause reads for this Socket. See: [[resume-reads]]."
-  ([socket] (-write socket ::pause-reads nil)))
+  ([socket]          (-write socket ::pause-reads nil))
+  ([socket callback] (-write socket ::pause-reads callback)))
 
 (defn resume-reads
   "Resume reads for this Socket. See: [[pause-reads]]."
-  ([socket] (-write socket ::resume-reads nil)))
+  ([socket]          (-write socket ::resume-reads nil))
+  ([socket callback] (-write socket ::resume-reads callback)))
 
 (defn- ex-write-queue-full []
   (ex-info "Write queue full" {:err ::write-queue-full}))
