@@ -11,11 +11,6 @@
            [java.util.concurrent.atomic AtomicInteger]
            [java.util.concurrent.locks ReentrantLock]))
            
-;; Unique objects that act as markers on the write queue.
-(def CLOSE        (Object.))
-(def PAUSE-READS  (Object.))
-(def RESUME-READS (Object.))
-
 (defn- server-socket-channel ^ServerSocketChannel [port]
   (doto (ServerSocketChannel/open)
     (.configureBlocking false)
@@ -82,16 +77,16 @@
 (defn close
   "Queue the supplied Socket to be closed. Accepts an optional, zero argument
   callback that will be run after the socket has been closed."
-  ([socket]          (-write socket CLOSE nil))
-  ([socket callback] (-write socket CLOSE callback)))
+  ([socket]          (-write socket ::close nil))
+  ([socket callback] (-write socket ::close callback)))
 
 (defn pause-reads
   "Pause reads for this Socket. See: [[resume-reads]]."
-  ([socket] (-write socket PAUSE-READS nil)))
+  ([socket] (-write socket ::pause-reads nil)))
 
 (defn resume-reads
   "Resume reads for this Socket. See: [[pause-reads]]."
-  ([socket] (-write socket RESUME-READS nil)))
+  ([socket] (-write socket ::resume-reads nil)))
 
 (defn- ex-write-queue-full []
   (ex-info "Write queue full" {:err ::write-queue-full}))
@@ -169,15 +164,15 @@
     (try (loop []
            (if-some [[buffer callback] (.peek write-queue)]
              (condp identical? buffer
-               CLOSE        (.close ch)
-               PAUSE-READS  (do (set-flag key paused)
-                                (.poll write-queue)
-                                (some-> callback submit)
-                                (recur))
-               RESUME-READS (do (unset-flag key paused)
-                                (.poll write-queue)
-                                (some-> callback submit)
-                                (recur))
+               ::close        (.close ch)
+               ::pause-reads  (do (set-flag key paused)
+                                  (.poll write-queue)
+                                  (some-> callback submit)
+                                  (recur))
+               ::resume-reads (do (unset-flag key paused)
+                                  (.poll write-queue)
+                                  (some-> callback submit)
+                                  (recur))
                (do (.getAndAdd write-limit (.write ch ^ByteBuffer buffer))
                    (when-not (.hasRemaining ^ByteBuffer buffer)
                      (.poll write-queue)

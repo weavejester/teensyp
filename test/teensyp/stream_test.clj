@@ -43,5 +43,5 @@
     (.flip buffer)
     (handler state socket buffer)
     (Thread/sleep 100)
-    (is (= ["fooHello" "barWorld" tcp/CLOSE] @output))
+    (is (= ["fooHello" "barWorld" ::tcp/close] @output))
     (is (not (realized? error)))))
