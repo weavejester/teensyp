@@ -22,55 +22,65 @@ At minimum, TeensyP requires a port to listen on and a handler function:
 (tcp/start-server {:port 3000, :handler demo-handler})
 ```
 
+### Handlers
+
 The handler function has three arities, and defines how the server
 behaves.
 
 ```clojure
-(import 'java.nio.ByteBuffer)
-
-(defn demo-handler
-  ([write]
-   ;; With 1 argument, we can write ByteBuffers via the write function.
-   ;; The return value is the channel's state.
+(defn example-handler
+  ([socket]
+   ;; The 1 argument arity is called when the socket is accepted.
+   ;; The return value is the session state.
    {:read-bytes 0})
-  ([state ^ByteBuffer buffer write]
-   ;; With 3 arguments, we handle read data stored in a ByteBuffer. We
-   ;; can update the channel's state by returning a new value, and write
-   ;; to the output channel with the write function.
-   (update state :read-bytes + (.remaining buffer)))
+  ([state socket ^java.nio.ByteBuffer buffer]
+   ;; The 3 argument arity is called when the socket receives data from
+   ;; the client, contained in a ByteBuffer. The return value is the
+   ;; updated session state.
+   (let [remaining (.remaining buffer)]
+     (.position buffer (.limit buffer))  ; fake a read
+     (update state :read-bytes + remaining)))
   ([state exception]
-   ;; With 2 arguments, we have the channel close event. If it closed due to an
-   ;; exception, that exception is passed as the second argument, otherwise it
-   ;; will be nil.
+   ;; The 2 argument arity is called when the socket is closed. If it
+   ;; closed due to an exception, that exception is passed as the
+   ;; second argument, otherwise it will be nil.
    (println "Total bytes:" (:read-bytes state))))
 ```
 
-The handler maintains a `state`, which can be any Clojure data
-structure, but is usually a map. This state is unique to the channel,
-and is updated each time the channel is read from by the 3-arity form of
+The handler maintains a session `state`, which can be any Clojure data
+structure, but is usually a map. This state is unique to the socket,
+and is updated each time the socket is read from by the 3-arity form of
 the handler.
 
-### Writes
+Uncaught exceptions will close the channel and trigger the 2-arity form
+of the handler.
 
-The `write` function accepts a single `ByteBuffer` argument, or one of
-three special marker objects:
+### Sockets
 
-- `teensyp.server/CLOSE`        - closes the channel
-- `teensyp.server/PAUSE-READS`  - pause reads until resumed
-- `teensyp.server/RESUME-READS` - resume reads
+The `socket` argument satisfies the `teensyp.server/Socket` protocol,
+and represents the current connection between server and client.
 
-You may also specify a second argument to `write`. This is a zero
-argument callback function that will be called when the write completes.
+- `teensyp.server/write` - writes a buffer to the channel
+- `teensyp.server/close` - closes the channel
+- `teensyp.server/pause-reads`  - pause reads until resumed
+- `teensyp.server/resume-reads` - resume reads
+
+All of these functions are asynchronous, and can be supplied with an
+optional zero-argument callback function that will be called once they
+successfully complete.
+
+I/O errors will close the socket and trigger the 2-arity form of the
+handler.
 
 ### Guarantees
 
-TeensyP makes several guarantees that apply per-channel:
+TeensyP makes several guarantees that apply per socket:
 
 - The 1-arity accept is always called first.
 - The 2-arity close is always called last.
-- The current handler call for the channel must finish before the next
+- The current handler call for the socket must finish before the next
   can begin.
-- The write queue must be empty before the handler is called.
+- The write queue must be empty before the read arity is called.
 
 ### Server Options
 
