@@ -65,7 +65,12 @@
   (-> key .attachment :flags deref (bit-flag-set? flag)))
 
 (defprotocol Socket
-  (-write [socket buffer callback]))
+  "A protocol representing a client socket. See also: [[write]], [[close]],
+  [[pause-reads]] and [[resume-reads]]."
+  (-write [socket buffer callback]
+    "Queue the buffer to be written to the socket. If the callback is not nil,
+    it will be called as a zero argument function once the buffer has been
+    written. See [[write]] for a more convenient way of calling this method."))
 
 (defn write
   "Queue up a ByteBuffer to be written a socket defined by the Socket protocol.
@@ -94,8 +99,7 @@
 (defn- ex-write-queue-over-capacity []
   (ex-info "Write queue over capacity" {:err ::write-queue-over-capacity}))
 
-(defn- update-write-limit
-  [^AtomicInteger limit ^ByteBuffer buffer]
+(defn- update-write-limit [^AtomicInteger limit ^ByteBuffer buffer]
   (let [remaining (.remaining buffer)]
     (when (> remaining (.getAndAdd limit (- remaining)))
       (.getAndAdd limit remaining)
@@ -140,8 +144,7 @@
         (vreset! closef #(close-key key submit ex handler))
         (close-key key submit ex handler)))))
 
-(defn- handle-accept
-  [^SelectionKey key submit {:keys [handler] :as opts}]
+(defn- handle-accept [^SelectionKey key submit {:keys [handler] :as opts}]
   (let [^Selector selector (.selector key)
         ^SocketChannel  ch (.accept ^ServerSocketChannel (.channel key))]
     (.configureBlocking ch false)
@@ -182,8 +185,7 @@
          (catch IOException ex
            (handle-close key submit ex opts)))))
 
-(defn- handle-read
-  [^SelectionKey key submit {:keys [handler] :as opts}]
+(defn- handle-read [^SelectionKey key submit {:keys [handler] :as opts}]
   (let [{:keys [^ByteBuffer read-buffer state]} (.attachment key)
         ^SocketChannel  ch (-> key .channel)
         ^Selector selector (-> key .selector)]
@@ -241,19 +243,12 @@
   The handler function must have three arities:
 
       (fn handler
-        ([write] initial-state)           ;; on socket accept
-        ([state buffer write] new-state)  ;; on socket read data
-        ([state exception]))              ;; on socket close
+        ([socket] initial-state)           ;; on socket accept
+        ([state socket buffer] new-state)  ;; on socket read data
+        ([state exception]))               ;; on socket close
 
-  The `buffer` is a java.nio.ByteBuffer instance, and `write` is a function
-  that takes a buffer as an argument and will queue it to send to the client.
-  To close the channel, pass [[CLOSE]] to the write function.
-
-  The write function may also take [[PAUSE-READS]] and [[RESUME-READS]].
-  These will pause and resume reads calls respectively.
-
-  You may optionally specify a second argument to `write`. This is should be
-  a zero-argument callback function, which is called after the write completes.
+  The `buffer` is a java.nio.ByteBuffer instance, and `socket` is an object
+  that satisfies the [[Socket]] protocol.
 
   The `state` is a custom data structure that is returned when the accept or
   read arities are triggered. A different state is associated with each
