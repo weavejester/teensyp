@@ -18,7 +18,7 @@
 (defn- hello-handler
   ([socket]
    (tcp/write socket (->buffer "hello\n"))
-   (tcp/write socket tcp/CLOSE))
+   (tcp/close socket))
   ([_state _socket _buffer])
   ([_state _exception]))
 
@@ -114,24 +114,24 @@
 
 (deftest server-pause-and-resume-test
   (let [read-count (atom 0)
-        write-ref  (atom nil)]
+        socket     (atom nil)]
     (with-open [_ (tcp/start-server
                    {:port 3462
                     :handler
                     (fn
-                      ([sock] (reset! write-ref #(tcp/write sock %)))
+                      ([sock] (reset! socket sock))
                       ([_ _ _] (swap! read-count inc))
                       ([_ _]))})]
       (with-open [sock (Socket. "localhost" 3462)]
         (with-open [writer (io/writer (.getOutputStream sock))]
           (future (doto writer (.write "foo") .flush))
           (Thread/sleep 10)
-          (@write-ref tcp/PAUSE-READS)
+          (tcp/pause-reads @socket)
           (Thread/sleep 10)
           (future (doto writer (.write "bar") .flush))
           (Thread/sleep 10)
           (is (= 1 @read-count))
-          (@write-ref tcp/RESUME-READS)
+          (tcp/resume-reads @socket)
           (Thread/sleep 20)
           (is (= 2 @read-count)))))))
 

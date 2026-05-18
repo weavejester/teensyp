@@ -45,10 +45,13 @@
 (defn- new-default-executor []
   (Executors/newFixedThreadPool 32))
 
-(defn- blocking [f x]
+(defn- blocking [f]
   (let [latch (CountDownLatch. 1)]
-    (f x #(.countDown latch))
+    (f #(.countDown latch))
     (.await latch)))
+
+(defn- write! [sock buf] (blocking #(tcp/write sock buf %)))
+(defn- close! [sock]     (blocking #(tcp/close sock %)))
 
 (defn stream-handler
   "Create a Teensyp server handler from a function that takes an InputStream
@@ -62,8 +65,7 @@
   ([handler {:keys [executor read-buffer-size] :or {read-buffer-size 8192}}]
    (fn
      ([socket]
-      (let [write      #(tcp/write socket %1 %2)
-            executor   (or executor (new-default-executor))
+      (let [executor   (or executor (new-default-executor))
             write-lock (ReentrantLock.)
             read-lock  (ReentrantLock.)
             can-read   (.newCondition read-lock)
@@ -85,11 +87,11 @@
                          (with-lock write-lock
                            (if @closed?
                              (throw (IOException. "Closed"))
-                             (blocking write (ByteBuffer/wrap b off len)))))
+                             (write! socket (ByteBuffer/wrap b off len)))))
             closef     (fn []
                          (with-lock write-lock
                            (when-not @closed?
-                             (blocking write tcp/CLOSE)
+                             (close! socket)
                              (vreset! closed? true))))
             input      (input-stream readf closef)
             output     (output-stream writef closef)]

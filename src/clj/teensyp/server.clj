@@ -11,21 +11,10 @@
            [java.util.concurrent.atomic AtomicInteger]
            [java.util.concurrent.locks ReentrantLock]))
            
-
-(def CLOSE
-  "A unique identifier that can be passed to the write function of a handler
-  in order to close the connection."
-  (Object.))
-
-(def PAUSE-READS
-  "A unique identifier that can be passed to the write function of a handler
-  in order to pause reads. See: [[RESUME-READS]]."
-  (Object.))
-
-(def RESUME-READS
-  "A unique identifier that can be passed to the write function of a handler
-  in order to pause reads. See: [[PAUSE-READS]]."
-  (Object.))
+;; Unique objects that act as markers on the write queue.
+(def CLOSE        (Object.))
+(def PAUSE-READS  (Object.))
+(def RESUME-READS (Object.))
 
 (defn- server-socket-channel ^ServerSocketChannel [port]
   (doto (ServerSocketChannel/open)
@@ -87,10 +76,22 @@
   "Queue up a ByteBuffer to be written a socket defined by the Socket protocol.
   Accepts an optional, zero argument callback function that will be run after
   the buffer has been written."
-  ([socket buffer]
-   (-write socket buffer nil))
-  ([socket buffer callback]
-   (-write socket buffer callback)))
+  ([socket buffer]          (-write socket buffer nil))
+  ([socket buffer callback] (-write socket buffer callback)))
+
+(defn close
+  "Queue the supplied Socket to be closed. Accepts an optional, zero argument
+  callback that will be run after the socket has been closed."
+  ([socket]          (-write socket CLOSE nil))
+  ([socket callback] (-write socket CLOSE callback)))
+
+(defn pause-reads
+  "Pause reads for this Socket. See: [[resume-reads]]."
+  ([socket] (-write socket PAUSE-READS nil)))
+
+(defn resume-reads
+  "Resume reads for this Socket. See: [[pause-reads]]."
+  ([socket] (-write socket RESUME-READS nil)))
 
 (defn- ex-write-queue-full []
   (ex-info "Write queue full" {:err ::write-queue-full}))
