@@ -12,11 +12,11 @@
 
 (defn- double-handler
   ([_])
-  ([_ buffer write]
+  ([_ socket buffer]
    (try (loop []
           (when-some [s (buf/read-line buffer ascii)]
             (let [x (Integer/parseInt s)]
-              (write (buf/str->buffer (str (* 2 x) "\n") ascii))
+              (tcp/write socket (buf/str->buffer (str (* 2 x) "\n") ascii))
               (recur))))
         (catch Exception ex
           (prn ex))))
@@ -59,7 +59,7 @@
   (with-open [_ (tcp/start-server
                  {:port 4567
                   :handler double-handler
-                  :write-queue-size 256})]
+                  :write-queue-size 512})]
     (let [amount  16384
           threads 16
           numbers (partition (/ amount threads) (shuffle (range amount)))

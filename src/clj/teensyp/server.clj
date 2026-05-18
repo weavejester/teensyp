@@ -80,6 +80,18 @@
 (defn- has-flag? [^SelectionKey key flag]
   (-> key .attachment :flags deref (bit-flag-set? flag)))
 
+(defprotocol Socket
+  (-write [socket buffer callback]))
+
+(defn write
+  "Queue up a ByteBuffer to be written a socket defined by the Socket protocol.
+  Accepts an optional, zero argument callback function that will be run after
+  the buffer has been written."
+  ([socket buffer]
+   (-write socket buffer nil))
+  ([socket buffer callback]
+   (-write socket buffer callback)))
+
 (defn- ex-write-queue-full []
   (ex-info "Write queue full" {:err ::write-queue-full}))
 
@@ -93,19 +105,18 @@
       (.getAndAdd limit remaining)
       (throw (ex-write-queue-over-capacity)))))
 
-(defn- writer [^SelectionKey key]
-  (fn write
-    ([buffer] (write buffer nil))
-    ([buffer callback]
-     (let [{:keys [^ArrayBlockingQueue write-queue write-limit]}
-           (.attachment key)]
+(extend-protocol Socket
+  SelectionKey
+  (-write [key buffer callback]
+    (let [{:keys [^ArrayBlockingQueue write-queue write-limit]}
+          (.attachment key)]
        (when (zero? (.remainingCapacity write-queue))
          (throw (ex-write-queue-full)))
        (when (instance? ByteBuffer buffer)
          (update-write-limit write-limit buffer))
        (.add write-queue [buffer callback])
        (set-flag key writing)
-       (-> key .selector .wakeup)))))
+       (-> key .selector .wakeup))))
 
 (defn- new-context
   [{:keys [read-buffer-size write-buffer-size write-queue-size]
@@ -141,7 +152,7 @@
     (let [{:keys [state] :as context} (new-context opts)
           key (.register ch selector 0 context)]
       (set-flag key working)
-      (submit #(try (vreset! state (handler (writer key)))
+      (submit #(try (vreset! state (handler key))
                     (catch Exception ex
                       (handle-close key submit ex opts))
                     (finally
@@ -185,7 +196,7 @@
         (handle-close key submit nil opts)
         (do (.flip read-buffer)
             (set-flag key working)
-            (submit #(try (vswap! state handler read-buffer (writer key))
+            (submit #(try (vswap! state handler key read-buffer)
                           (catch Exception ex
                             (handle-close key submit ex opts))
                           (finally

@@ -28,19 +28,20 @@
                         (deliver error ex)))))
         buffer   (ByteBuffer/allocate 128)
         output   (atom [])
-        write    (fn [buf callback]
-                   (let [x (if (instance? ByteBuffer buf) (<-buffer buf) buf)]
-                     (swap! output conj x)
-                     (callback)))
-        state   (handler write)]
+        socket   (reify tcp/Socket
+                   (-write [_ buf callback]
+                      (let [x (if (instance? ByteBuffer buf) (<-buffer buf) buf)]
+                        (swap! output conj x)
+                        (callback))))
+        state   (handler socket)]
     (.put buffer (->bytes "Hello\nWor"))
     (.flip buffer)
-    (handler state buffer write)
+    (handler state socket buffer)
     (Thread/sleep 100)
     (.compact buffer)
     (.put buffer (->bytes "ld\n"))
     (.flip buffer)
-    (handler state buffer write)
+    (handler state socket buffer)
     (Thread/sleep 100)
     (is (= ["fooHello" "barWorld" tcp/CLOSE] @output))
     (is (not (realized? error)))))

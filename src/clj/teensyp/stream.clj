@@ -1,7 +1,7 @@
 (ns teensyp.stream
   "A namespace of utility functions for integrating streams into Teensyp."
   (:require [teensyp.concurrent :refer [with-lock]]
-            [teensyp.server :as t])
+            [teensyp.server :as tcp])
   (:import [java.io IOException]
            [java.nio ByteBuffer]
            [java.util.concurrent CountDownLatch Executors ExecutorService]
@@ -61,8 +61,9 @@
    (stream-handler handler {}))
   ([handler {:keys [executor read-buffer-size] :or {read-buffer-size 8192}}]
    (fn
-     ([write]
-      (let [executor   (or executor (new-default-executor))
+     ([socket]
+      (let [write      #(tcp/write socket %1 %2)
+            executor   (or executor (new-default-executor))
             write-lock (ReentrantLock.)
             read-lock  (ReentrantLock.)
             can-read   (.newCondition read-lock)
@@ -88,7 +89,7 @@
             closef     (fn []
                          (with-lock write-lock
                            (when-not @closed?
-                             (blocking write t/CLOSE)
+                             (blocking write tcp/CLOSE)
                              (vreset! closed? true))))
             input      (input-stream readf closef)
             output     (output-stream writef closef)]
@@ -98,7 +99,7 @@
          :closed?    closed?
          :read-lock  read-lock
          :write-lock write-lock}))
-     ([{:keys [buffer can-read read-lock] :as state} ^ByteBuffer buf _write]
+     ([{:keys [buffer can-read read-lock] :as state} _socket ^ByteBuffer buf]
       (with-lock read-lock
         (doto ^ByteBuffer buffer .compact (.put buf) .flip)
         (.signal ^Condition can-read)

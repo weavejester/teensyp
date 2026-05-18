@@ -16,10 +16,10 @@
   (buf/str->buffer s StandardCharsets/US_ASCII))
 
 (defn- hello-handler
-  ([write]
-   (write (->buffer "hello\n"))
-   (write tcp/CLOSE))
-  ([_state _buffer _write])
+  ([socket]
+   (tcp/write socket (->buffer "hello\n"))
+   (tcp/write socket tcp/CLOSE))
+  ([_state _socket _buffer])
   ([_state _exception]))
 
 (deftest server-write-test
@@ -36,10 +36,10 @@
     (String. b StandardCharsets/US_ASCII)))
 
 (defn- echo-handler
-  ([_write])
-  ([_state buffer write]
+  ([_socket])
+  ([_state socket buffer]
    (let [s (<-buffer buffer)]
-     (write (->buffer s))))
+     (tcp/write socket (->buffer s))))
   ([_state _exception]))
 
 (deftest server-echo-test
@@ -69,10 +69,11 @@
       (is (deref closed? 100 false)))))
 
 (defn- reverse-line-handler
-  ([_write])
-  ([_state buffer write]
+  ([_socket])
+  ([_state socket buffer]
    (when-some [line (buf/read-line buffer StandardCharsets/US_ASCII)]
-     (-> (apply str (reverse line)) (str "\r\n") ->buffer write)))
+     (let [rev (str (apply str (reverse line)) "\r\n")]
+       (tcp/write socket (->buffer rev)))))
   ([_state _ex]))
 
 (deftest server-readline-test
@@ -96,9 +97,9 @@
                     :handler
                     (fn
                       ([_] [])
-                      ([state buf write]
+                      ([state sock buf]
                        (Thread/sleep 20)
-                       (write (->buffer "ack"))
+                       (tcp/write sock (->buffer "ack"))
                        (conj state (<-buffer buf)))
                       ([state _]
                        (deliver messages (conj state :close))))})]
@@ -118,7 +119,7 @@
                    {:port 3462
                     :handler
                     (fn
-                      ([write] (reset! write-ref write))
+                      ([sock] (reset! write-ref #(tcp/write sock %)))
                       ([_ _ _] (swap! read-count inc))
                       ([_ _]))})]
       (with-open [sock (Socket. "localhost" 3462)]
@@ -139,12 +140,12 @@
                  {:port 3463
                   :handler
                   (fn
-                    ([write]
-                     (write (->buffer "foo")
-                            (fn []
-                              (write (->buffer "bar")
-                                     (fn []
-                                       (write (->buffer "\r\n")))))))
+                    ([sock]
+                     (tcp/write sock (->buffer "foo")
+                       (fn []
+                         (tcp/write sock (->buffer "bar")
+                           (fn []
+                             (tcp/write sock (->buffer "\r\n")))))))
                     ([_ _ _])
                     ([_ _]))})]
     (with-open [sock (Socket. "localhost" 3463)]
@@ -159,12 +160,12 @@
                     :write-queue-size 2
                     :handler
                     (fn
-                      ([write]
-                       (try (write (->buffer "toobig\n"))
+                      ([sock]
+                       (try (tcp/write sock (->buffer "toobig\n"))
                             (catch Exception ex (swap! exceptions conj ex)))
-                       (try (write (->buffer "1\n"))
-                            (write (->buffer "2\n"))
-                            (write (->buffer "3\n"))
+                       (try (tcp/write sock (->buffer "1\n"))
+                            (tcp/write sock (->buffer "2\n"))
+                            (tcp/write sock (->buffer "3\n"))
                             (catch Exception ex (swap! exceptions conj ex))))
                       ([_ _ _])
                       ([_ _]))})]
@@ -197,7 +198,7 @@
                       :handler
                       (fn
                         ([_])
-                        ([_ buf _] (throw (ex-info (<-buffer buf) {})))
+                        ([_ _ buf] (throw (ex-info (<-buffer buf) {})))
                         ([_ ex] (deliver error ex)))})]
         (with-open [sock (Socket. "localhost" 3466)]
           (with-open [writer (io/writer (.getOutputStream sock))]
