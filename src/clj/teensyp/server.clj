@@ -67,23 +67,27 @@
 (defprotocol Socket
   "A protocol representing a client socket. See also: [[write]], [[close]],
   [[pause-reads]] and [[resume-reads]]."
-  (-write [socket buffer callback]
+  (queue-write [socket buffer callback]
     "Queue the buffer to be written to the socket. If the callback is not nil,
     it will be called as a zero argument function once the buffer has been
-    written. See [[write]] for a more convenient way of calling this method."))
+    written. See [[write]] for a more convenient way of calling this method.")
+  (socket-info [socket]
+    "Return a map of information about the socket's connection. This includes
+    keys for :local-address and :remote-address, which are immutable
+    java.net.InetSocketAddress instances."))
 
 (defn write
   "Queue up a ByteBuffer to be written a socket defined by the Socket protocol.
   Accepts an optional, zero argument callback function that will be run after
   the buffer has been written."
-  ([socket buffer]          (-write socket buffer nil))
-  ([socket buffer callback] (-write socket buffer callback)))
+  ([socket buffer]          (queue-write socket buffer nil))
+  ([socket buffer callback] (queue-write socket buffer callback)))
 
 (defn close
   "Queue the supplied Socket to be closed. Accepts an optional, zero argument
   callback that will be run after the socket has been closed."
-  ([socket]          (-write socket ::close nil))
-  ([socket callback] (-write socket ::close callback)))
+  ([socket]          (queue-write socket ::close nil))
+  ([socket callback] (queue-write socket ::close callback)))
 
 ;; We send pause/resume events to the write queue. This ensures they execute
 ;; in the same thread as the server selector, wakes the selector up, and
@@ -92,13 +96,13 @@
 
 (defn pause-reads
   "Pause reads for this Socket. See: [[resume-reads]]."
-  ([socket]          (-write socket ::pause-reads nil))
-  ([socket callback] (-write socket ::pause-reads callback)))
+  ([socket]          (queue-write socket ::pause-reads nil))
+  ([socket callback] (queue-write socket ::pause-reads callback)))
 
 (defn resume-reads
   "Resume reads for this Socket. See: [[pause-reads]]."
-  ([socket]          (-write socket ::resume-reads nil))
-  ([socket callback] (-write socket ::resume-reads callback)))
+  ([socket]          (queue-write socket ::resume-reads nil))
+  ([socket callback] (queue-write socket ::resume-reads callback)))
 
 (defn- ex-write-queue-full []
   (ex-info "Write queue full" {:err ::write-queue-full}))
@@ -114,7 +118,7 @@
 
 (extend-protocol Socket
   SelectionKey
-  (-write [key buffer callback]
+  (queue-write [key buffer callback]
     (let [{:keys [^ArrayBlockingQueue write-queue write-limit]}
           (.attachment key)]
        (when (zero? (.remainingCapacity write-queue))
@@ -123,10 +127,13 @@
          (update-write-limit write-limit buffer))
        (.add write-queue [buffer callback])
        (set-flag key writing)
-       (-> key .selector .wakeup))))
+       (-> key .selector .wakeup)))
+  (socket-info [key]
+    (-> key .attachment :socket-info)))
 
 (defn- new-context
-  [{:keys [read-buffer-size write-buffer-size write-queue-size]
+  [^SocketChannel ch
+   {:keys [read-buffer-size write-buffer-size write-queue-size]
     :or   {read-buffer-size  8192
            write-buffer-size 32768
            write-queue-size  64}}]
@@ -136,7 +143,9 @@
    :flags       (volatile! 0)
    :state       (volatile! nil)
    :read-buffer (ByteBuffer/allocate read-buffer-size)
-   :closef      (volatile! nil)})
+   :closef      (volatile! nil)
+   :socket-info {:local-address  (.getLocalAddress ch)
+                 :remote-address (.getRemoteAddress ch)}})
 
 (defn- close-key [^SelectionKey key submit ex handler]
   (let [state (-> key .attachment :state)]
@@ -155,7 +164,7 @@
   (let [^Selector selector (.selector key)
         ^SocketChannel  ch (.accept ^ServerSocketChannel (.channel key))]
     (.configureBlocking ch false)
-    (let [{:keys [state] :as context} (new-context opts)
+    (let [{:keys [state] :as context} (new-context ch opts)
           key (.register ch selector 0 context)]
       (set-flag key working)
       (submit #(try (vreset! state (handler key))

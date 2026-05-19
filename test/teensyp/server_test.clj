@@ -4,7 +4,7 @@
             [teensyp.server :as tcp]
             [teensyp.buffer :as buf])
   (:import [java.io BufferedReader]
-           [java.net Socket]
+           [java.net InetSocketAddress Socket]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]))
 
@@ -207,3 +207,17 @@
         (let [err (deref error 5000 :timeout)]
           (is (instance? clojure.lang.ExceptionInfo err))
           (is (= "Hello World" (ex-message err))))))))
+
+(deftest server-socket-info-test
+  (let [sock-info (promise)]
+    (with-open [_ (tcp/start-server
+                   {:port 3467
+                    :handler
+                    (fn
+                      ([sock] (deliver sock-info (tcp/socket-info sock)))
+                      ([_ _ _])
+                      ([_ _]))})]
+      (with-open [_ (Socket. "localhost" 3467)])
+      (let [info (deref sock-info 5000 :timeout)]
+        (is (= #{:local-address :remote-address} (set (keys info))))
+        (is (= 3467 (.getPort ^InetSocketAddress (:local-address info))))))))

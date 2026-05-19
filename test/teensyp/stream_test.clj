@@ -29,10 +29,11 @@
         buffer   (ByteBuffer/allocate 128)
         output   (atom [])
         socket   (reify tcp/Socket
-                   (-write [_ buf callback]
+                   (queue-write [_ buf callback]
                       (let [x (if (instance? ByteBuffer buf) (<-buffer buf) buf)]
                         (swap! output conj x)
-                        (callback))))
+                        (callback)))
+                   (socket-info [_] {}))
         state   (handler socket)]
     (.put buffer (->bytes "Hello\nWor"))
     (.flip buffer)
@@ -54,9 +55,10 @@
                     {:read-buffer-size 4})
         output    (atom [])
         socket    (reify tcp/Socket
-                    (-write [_ buf callback]
+                    (queue-write [_ buf callback]
                       (swap! output conj buf)
-                      (when callback (callback))))
+                      (when callback (callback)))
+                    (socket-info [_] {}))
         buf       (ByteBuffer/allocate 4)
         state     (handler socket)]
     (doto buf (.put (->bytes "abc")) .flip)
