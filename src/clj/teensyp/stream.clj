@@ -70,6 +70,7 @@
             read-lock  (ReentrantLock.)
             can-read   (.newCondition read-lock)
             buffer     (.flip (ByteBuffer/allocate read-buffer-size))
+            paused?    (volatile! false)
             closed?    (volatile! false)
             readf      (fn [b off len]
                          (with-lock read-lock
@@ -81,6 +82,9 @@
                               :else
                               (let [len (min len (.remaining buffer))]
                                 (.get buffer b off len)
+                                (when @paused?
+                                  (vreset! paused? false)
+                                  (tcp/resume-reads socket))
                                 (when (.hasRemaining buffer) (.signal can-read))
                                 len)))))
             writef     (fn [b off len]
@@ -99,11 +103,17 @@
         {:buffer     buffer
          :can-read   can-read 
          :closed?    closed?
+         :paused?    paused?
          :read-lock  read-lock
          :write-lock write-lock}))
-     ([{:keys [buffer can-read read-lock] :as state} _socket ^ByteBuffer buf]
+     ([{:keys [^ByteBuffer buffer can-read paused? read-lock] :as state}
+       socket ^ByteBuffer buf]
       (with-lock read-lock
-        (doto ^ByteBuffer buffer .compact (.put buf) .flip)
+        (doto buffer .compact (.put buf))
+        (when-not (.hasRemaining buffer)
+          (vreset! paused? true)
+          (tcp/pause-reads socket))
+        (.flip buffer)
         (.signal ^Condition can-read)
         state))
      ([{:keys [read-lock write-lock can-read closed?]} _ex]

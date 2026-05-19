@@ -14,7 +14,7 @@
 (defn- <-buffer ^String [b]
   (buf/buffer->str b StandardCharsets/US_ASCII))
 
-(deftest test-stream-handler
+(deftest stream-handler-test
   (let [error    (promise)
         handler  (stream/stream-handler
                   (fn [^InputStream in ^OutputStream out]
@@ -45,3 +45,25 @@
     (Thread/sleep 100)
     (is (= ["fooHello" "barWorld" ::tcp/close] @output))
     (is (not (realized? error)))))
+
+(deftest stream-backpressure-test
+  (let [in-stream (promise)
+        handler   (stream/stream-handler
+                    (fn [^InputStream in ^OutputStream _out]
+                      (deliver in-stream in))
+                    {:read-buffer-size 4})
+        output    (atom [])
+        socket    (reify tcp/Socket
+                    (-write [_ buf callback]
+                      (swap! output conj buf)
+                      (when callback (callback))))
+        buf       (ByteBuffer/allocate 4)
+        state     (handler socket)]
+    (doto buf (.put (->bytes "abc")) .flip)
+    (handler state socket buf)
+    (is (= [] @output))
+    (doto buf .compact (.put (byte \d)) .flip)
+    (handler state socket buf)
+    (is (= [::tcp/pause-reads] @output))
+    (.read ^InputStream @in-stream (byte-array 4) 0 4)
+    (is (= [::tcp/pause-reads ::tcp/resume-reads] @output))))
