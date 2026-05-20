@@ -152,13 +152,14 @@
     (submit #(vswap! state handler ex))))
 
 (defn- handle-close [^SelectionKey key submit ex {:keys [handler]}]
-  (let [closef (-> key .attachment :closef)]
-    (-> key .channel .close)
-    (set-flag key closed)
-    (with-lock (-> key .attachment :lock)
-      (if (has-flag? key working)
-        (vreset! closef #(close-key key submit ex handler))
-        (close-key key submit ex handler)))))
+  (when (instance? SocketChannel (.channel key))
+    (let [closef (-> key .attachment :closef)]
+      (-> key .channel .close)
+      (set-flag key closed)
+      (with-lock (-> key .attachment :lock)
+        (if (has-flag? key working)
+          (vreset! closef #(close-key key submit ex handler))
+          (close-key key submit ex handler))))))
 
 (defn- handle-accept [^SelectionKey key submit {:keys [handler] :as opts}]
   (let [^Selector selector (.selector key)
@@ -241,9 +242,9 @@
 (defn- handle-key [^SelectionKey key submit opts]
   (when (.isValid key)
     (cond
+      (.isReadable key)   (handle-read key submit opts)
       (.isAcceptable key) (handle-accept key submit opts)
-      (.isWritable key)   (handle-write key submit opts)
-      (.isReadable key)   (handle-read key submit opts))))
+      (.isWritable key)   (handle-write key submit opts))))
 
 (defn- server-loop
   [^ServerSocketChannel server-ch ^Selector selector
@@ -256,6 +257,8 @@
           (foreach! #(handle-key % submit opts) (.selectedKeys selector))
           (recur)))
       (finally
+        (run! #(handle-close % submit nil opts) (.keys selector))
+        (.close selector)
         (.shutdown executor)))))
 
 (defn- new-default-executor []

@@ -8,9 +8,18 @@
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]))
 
+(defn- nil-handler
+  ([_socket])
+  ([_state _socket _buffer])
+  ([_state _exception]))
+
 (deftest server-close-test
-  (with-open [server (tcp/start-server {:port 3456})]
-    (is (instance? java.io.Closeable server))))
+  (with-open [server (tcp/start-server {:port 3456, :handler nil-handler})]
+    (let [sock (Socket. "localhost" 3456)]
+      (is (instance? java.io.Closeable server))
+      (.close ^java.io.Closeable server)
+      (Thread/sleep 10)
+      (is (neg? (.read (.getInputStream sock)))))))
 
 (defn- ->buffer [s]
   (buf/str->buffer s StandardCharsets/US_ASCII))
