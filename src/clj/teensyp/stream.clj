@@ -121,13 +121,3 @@
         (with-lock write-lock
           (vreset! closed? true)
           (.signal ^Condition can-read)))))))
-     
-        
-                          
-                         
-                       
-                      
-                         
-                         
-       
-  
