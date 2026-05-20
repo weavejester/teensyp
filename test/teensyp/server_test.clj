@@ -141,7 +141,7 @@
     (let [read-count (atom 0)
           socket     (atom nil)]
       (with-open [_ (tcp/start-server
-                     {:port 3462
+                     {:port 3463
                       :handler
                       (fn
                         ([sock] (reset! socket sock))
@@ -149,7 +149,7 @@
                          (.position buf 3)  ; fake read of only 3 bytes
                          (swap! read-count inc))
                         ([_ _]))})]
-        (with-open [sock (Socket. "localhost" 3462)]
+        (with-open [sock (Socket. "localhost" 3463)]
           (with-open [writer (io/writer (.getOutputStream sock))]
             (doto writer (.write "foobar") .flush)
             (Thread/sleep 10)
@@ -162,7 +162,7 @@
 
 (deftest server-write-callback-test
   (with-open [_ (tcp/start-server
-                 {:port 3463
+                 {:port 3464
                   :handler
                   (fn
                     ([sock]
@@ -173,14 +173,14 @@
                              (tcp/write sock (->buffer "\r\n")))))))
                     ([_ _ _])
                     ([_ _]))})]
-    (with-open [sock (Socket. "localhost" 3463)]
+    (with-open [sock (Socket. "localhost" 3464)]
       (with-open [reader ^BufferedReader (io/reader (.getInputStream sock))]
         (is (= "foobar" (.readLine reader)))))))
 
 (deftest server-write-limit-test
   (let [exceptions (atom [])]
     (with-open [_ (tcp/start-server
-                   {:port 3464
+                   {:port 3465
                     :write-buffer-size 4
                     :write-queue-size 2
                     :handler
@@ -194,7 +194,7 @@
                             (catch Exception ex (swap! exceptions conj ex))))
                       ([_ _ _])
                       ([_ _]))})]
-      (with-open [sock (Socket. "localhost" 3464)]
+      (with-open [sock (Socket. "localhost" 3465)]
         (with-open [reader ^BufferedReader (io/reader (.getInputStream sock))]
           (is (= "1" (.readLine reader)))
           (is (= "2" (.readLine reader)))))
@@ -206,26 +206,26 @@
   (testing "Exception on init"
     (let [error (promise)]
       (with-open [_ (tcp/start-server
-                     {:port 3465
+                     {:port 3466
                       :handler
                       (fn
                         ([_] (throw (ex-info "Testing" {})))
                         ([_ _ _])
                         ([_ ex] (deliver error ex)))})]
-        (Socket. "localhost" 3465)
+        (Socket. "localhost" 3466)
         (let [err (deref error 5000 :timeout)]
           (is (instance? clojure.lang.ExceptionInfo err))
           (is (= "Testing" (ex-message err)))))))
   (testing "Exception on message receive"
     (let [error (promise)]
       (with-open [_ (tcp/start-server
-                     {:port 3466
+                     {:port 3467
                       :handler
                       (fn
                         ([_])
                         ([_ _ buf] (throw (ex-info (<-buffer buf) {})))
                         ([_ ex] (deliver error ex)))})]
-        (with-open [sock (Socket. "localhost" 3466)]
+        (with-open [sock (Socket. "localhost" 3467)]
           (with-open [writer (io/writer (.getOutputStream sock))]
             (.write writer "Hello World")
             (.flush writer)))
@@ -236,13 +236,13 @@
 (deftest server-socket-info-test
   (let [sock-info (promise)]
     (with-open [_ (tcp/start-server
-                   {:port 3467
+                   {:port 3468
                     :handler
                     (fn
                       ([sock] (deliver sock-info (tcp/socket-info sock)))
                       ([_ _ _])
                       ([_ _]))})]
-      (with-open [_ (Socket. "localhost" 3467)])
+      (with-open [_ (Socket. "localhost" 3468)])
       (let [info (deref sock-info 5000 :timeout)]
         (is (= #{:local-address :remote-address} (set (keys info))))
-        (is (= 3467 (.getPort ^InetSocketAddress (:local-address info))))))))
+        (is (= 3468 (.getPort ^InetSocketAddress (:local-address info))))))))
