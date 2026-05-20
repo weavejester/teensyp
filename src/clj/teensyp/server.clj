@@ -176,10 +176,46 @@
                           (@(-> key .attachment :closef))
                           (.wakeup selector)))))))))
 
+(defn- submit-read-handler [^SelectionKey key submit {:keys [handler] :as opts}]
+  (let [{:keys [^ByteBuffer read-buffer state]} (.attachment key)
+        ^Selector selector (.selector key)]
+    (.flip read-buffer)
+    (set-flag key working)
+    (submit #(try (vswap! state handler key read-buffer)
+                  (catch Exception ex
+                    (handle-close key submit ex opts))
+                  (finally
+                    (.compact read-buffer)
+                    (let [flags (unset-flag key working)]
+                      (if (bit-flag-set? flags closed)
+                        (@(-> key .attachment :closef))
+                        (.wakeup selector))))))))
+
+(defn- handle-read [^SelectionKey key submit opts]
+  (let [^SocketChannel ch (.channel key)]
+    (try
+      (if (neg? (.read ch ^ByteBuffer (:read-buffer (.attachment key))))
+        (handle-close key submit nil opts)
+        (submit-read-handler key submit opts)) 
+      (catch IOException ex
+        (handle-close key submit ex opts)))))
+
+(defn- handle-resumed [^SelectionKey key submit opts]
+  (try
+    (when (pos? (.position ^ByteBuffer (:read-buffer (.attachment key))))
+      (submit-read-handler key submit opts)) 
+    (catch IOException ex
+      (handle-close key submit ex opts))))
+
+(defn- resumed? [flags-before flags-after]
+  (and (bit-flag-set? flags-before paused)
+       (not (bit-flag-set? flags-after paused))))
+
 (defn- handle-write [^SelectionKey key submit opts]
   (let [{:keys [^Queue         write-queue
                 ^AtomicInteger write-limit]} (.attachment key)
-        ^SocketChannel ch (-> key .channel)]
+        ^SocketChannel ch (-> key .channel)
+        initial-flags     (-> key .attachment :flags deref)]
     (try (loop []
            (if-some [[buffer callback] (.peek write-queue)]
              (condp identical? buffer
@@ -197,30 +233,10 @@
                      (.poll write-queue)
                      (some-> callback submit)
                      (recur))))
-             (unset-flag key writing)))
+             (when (resumed? initial-flags (unset-flag key writing))
+               (handle-resumed key submit opts))))
          (catch IOException ex
            (handle-close key submit ex opts)))))
-
-(defn- handle-read [^SelectionKey key submit {:keys [handler] :as opts}]
-  (let [{:keys [^ByteBuffer read-buffer state]} (.attachment key)
-        ^SocketChannel  ch (-> key .channel)
-        ^Selector selector (-> key .selector)]
-    (try
-      (if (neg? (.read ch read-buffer))
-        (handle-close key submit nil opts)
-        (do (.flip read-buffer)
-            (set-flag key working)
-            (submit #(try (vswap! state handler key read-buffer)
-                          (catch Exception ex
-                            (handle-close key submit ex opts))
-                          (finally
-                            (.compact read-buffer)
-                            (let [flags (unset-flag key working)]
-                              (if (bit-flag-set? flags closed)
-                                (@(-> key .attachment :closef))
-                                (.wakeup selector))))))))
-      (catch IOException ex
-        (handle-close key submit ex opts)))))
 
 (defn- handle-key [^SelectionKey key submit opts]
   (when (.isValid key)

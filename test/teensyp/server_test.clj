@@ -113,27 +113,52 @@
       (is (= ["foo" "bar" :close] (deref messages 100 :timeout))))))
 
 (deftest server-pause-and-resume-test
-  (let [read-count (atom 0)
-        socket     (atom nil)]
-    (with-open [_ (tcp/start-server
-                   {:port 3462
-                    :handler
-                    (fn
-                      ([sock] (reset! socket sock))
-                      ([_ _ _] (swap! read-count inc))
-                      ([_ _]))})]
-      (with-open [sock (Socket. "localhost" 3462)]
-        (with-open [writer (io/writer (.getOutputStream sock))]
-          (future (doto writer (.write "foo") .flush))
-          (Thread/sleep 10)
-          (tcp/pause-reads @socket)
-          (Thread/sleep 10)
-          (future (doto writer (.write "bar") .flush))
-          (Thread/sleep 10)
-          (is (= 1 @read-count))
-          (tcp/resume-reads @socket)
-          (Thread/sleep 20)
-          (is (= 2 @read-count)))))))
+  (testing "write, pause, write, resume"
+    (let [read-count (atom 0)
+          socket     (atom nil)]
+      (with-open [_ (tcp/start-server
+                     {:port 3462
+                      :handler
+                      (fn
+                        ([sock] (reset! socket sock))
+                        ([_ _ ^ByteBuffer buf]
+                         (.position buf (.limit buf))  ; fake read
+                         (swap! read-count inc))
+                        ([_ _]))})]
+        (with-open [sock (Socket. "localhost" 3462)]
+          (with-open [writer (io/writer (.getOutputStream sock))]
+            (doto writer (.write "foo") .flush)
+            (Thread/sleep 10)
+            (tcp/pause-reads @socket)
+            (Thread/sleep 10)
+            (doto writer (.write "bar") .flush)
+            (Thread/sleep 10)
+            (is (= 1 @read-count))
+            (tcp/resume-reads @socket)
+            (Thread/sleep 10)
+            (is (= 2 @read-count)))))))
+  (testing "write more than can be read, pause, resume"
+    (let [read-count (atom 0)
+          socket     (atom nil)]
+      (with-open [_ (tcp/start-server
+                     {:port 3462
+                      :handler
+                      (fn
+                        ([sock] (reset! socket sock))
+                        ([_ _ ^ByteBuffer buf]
+                         (.position buf 3)  ; fake read of only 3 bytes
+                         (swap! read-count inc))
+                        ([_ _]))})]
+        (with-open [sock (Socket. "localhost" 3462)]
+          (with-open [writer (io/writer (.getOutputStream sock))]
+            (doto writer (.write "foobar") .flush)
+            (Thread/sleep 10)
+            (tcp/pause-reads @socket)
+            (Thread/sleep 10)
+            (is (= 1 @read-count))
+            (tcp/resume-reads @socket)
+            (Thread/sleep 10)
+            (is (= 2 @read-count))))))))
 
 (deftest server-write-callback-test
   (with-open [_ (tcp/start-server
