@@ -220,7 +220,9 @@
     (try (loop []
            (if-some [[buffer callback] (.peek write-queue)]
              (condp identical? buffer
-               ::close        (.close ch)
+               ::close        (do (.close ch)
+                                  (handle-close key submit nil opts)
+                                  (some-> callback submit))
                ::pause-reads  (do (set-flag key paused)
                                   (.poll write-queue)
                                   (some-> callback submit)

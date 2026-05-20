@@ -14,12 +14,26 @@
   ([_state _exception]))
 
 (deftest server-close-test
-  (with-open [server (tcp/start-server {:port 3456, :handler nil-handler})]
-    (let [sock (Socket. "localhost" 3456)]
-      (is (instance? java.io.Closeable server))
-      (.close ^java.io.Closeable server)
-      (Thread/sleep 10)
-      (is (neg? (.read (.getInputStream sock)))))))
+  (testing "external close"
+    (with-open [server (tcp/start-server {:port 3456, :handler nil-handler})]
+      (let [sock (Socket. "localhost" 3456)]
+        (is (instance? java.io.Closeable server))
+        (.close ^java.io.Closeable server)
+        (Thread/sleep 10)
+        (is (neg? (.read (.getInputStream sock)))))))
+  (testing "close after read"
+    (let [closed? (atom false)
+          handler (fn
+                    ([_])
+                    ([_ sock _] (tcp/close sock) nil)
+                    ([_ _] (reset! closed? true)))]
+      (with-open [_ (tcp/start-server {:port 3556, :handler handler})]
+        (let [sock (Socket. "localhost" 3556)]
+          (with-open [writer (io/writer (.getOutputStream sock))]
+            (doto writer (.write "foo") .flush)
+            (Thread/sleep 10)
+            (is @closed?)
+            (is (neg? (.read (.getInputStream sock))))))))))
 
 (defn- ->buffer [s]
   (buf/str->buffer s StandardCharsets/US_ASCII))
