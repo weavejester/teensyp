@@ -64,7 +64,7 @@
     (doto buf (.put (->bytes "abc")) .flip)
     (handler state socket buf)
     (is (= [] @output))
-    (doto buf .compact (.put (byte \d)) .flip)
+    (doto buf .compact (.put (->bytes "def")) .flip)
     (handler state socket buf)
     (is (= [::tcp/pause-reads] @output))
     (.read ^InputStream @in-stream (byte-array 4) 0 4)

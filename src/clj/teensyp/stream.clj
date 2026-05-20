@@ -1,6 +1,7 @@
 (ns teensyp.stream
   "A namespace of utility functions for integrating streams into Teensyp."
-  (:require [teensyp.concurrent :refer [with-lock]]
+  (:require [teensyp.buffer :as buf]
+            [teensyp.concurrent :refer [with-lock]]
             [teensyp.server :as tcp])
   (:import [java.io IOException]
            [java.nio ByteBuffer]
@@ -109,7 +110,8 @@
      ([{:keys [^ByteBuffer buffer can-read paused? read-lock] :as state}
        socket ^ByteBuffer buf]
       (with-lock read-lock
-        (doto buffer .compact (.put buf))
+        (.compact buffer)
+        (buf/copy buf buffer)
         (when-not (.hasRemaining buffer)
           (vreset! paused? true)
           (tcp/pause-reads socket))
