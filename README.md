@@ -6,11 +6,11 @@ A small, zero-dependency Clojure TCP server that uses Java NIO.
 
 Add the following dependency to your deps.edn file:
 
-    dev.weavejester/teensyp {:mvn/version "0.5.0"}
+    dev.weavejester/teensyp {:mvn/version "0.5.1"}
 
 Or to your Leiningen project file:
 
-    [dev.weavejester/teensyp "0.5.0"]
+    [dev.weavejester/teensyp "0.5.1"]
 
 ## Usage
 
