@@ -2,7 +2,7 @@
   "The main server namespace."
   (:require [teensyp.concurrent :refer [with-lock]])
   (:import [java.io Closeable IOException]
-           [java.net InetSocketAddress]
+           [java.net InetSocketAddress StandardSocketOptions]
            [java.nio ByteBuffer]
            [java.nio.channels Selector SelectionKey
             ServerSocketChannel SocketChannel]
@@ -274,6 +274,8 @@
   - `:handler` - a handler function (mandatory, see below)
   - `:executor` - a custom ExecutorService to supply worker threads
   - `:read-buffer-size` - the read buffer size in bytes (default 8K)
+  - `:recv-buffer-size` - the receive buffer size (i.e. the SO_RCVBUF option)
+  - `:reuse-address?` - sets the SO_REUSEADDR socket option (default false)
   - `:write-buffer-size` - the write buffer size in bytes (default 32K)
   - `:write-queue-size` - the max number of writes in the queue (default 64)
 
@@ -297,10 +299,15 @@
   The handler function is guaranteed to execute in serial per channel. That is,
   the accept will always be first, the close will always be last, and reads
   will always be sequential."
-  ^Closeable [{:keys [port executor] :as opts}]
+  ^Closeable [{:keys [port executor recv-buffer-size reuse-address?] :as opts}]
   {:pre [(int? port)]}
   (let [server-ch (server-socket-channel port)
         selector  (server-selector server-ch)
         executor  (or executor (new-default-executor))]
+    (when reuse-address?
+      (.setOption server-ch StandardSocketOptions/SO_REUSEADDR true))
+    (when recv-buffer-size
+      (.setOption server-ch StandardSocketOptions/SO_RCVBUF
+                  (Integer. ^long recv-buffer-size)))
     (.start (Thread. #(server-loop server-ch selector executor opts)))
     server-ch))

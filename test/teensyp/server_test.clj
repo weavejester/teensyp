@@ -4,8 +4,9 @@
             [teensyp.server :as tcp]
             [teensyp.buffer :as buf])
   (:import [java.io BufferedReader]
-           [java.net InetSocketAddress Socket]
+           [java.net InetSocketAddress Socket StandardSocketOptions]
            [java.nio ByteBuffer]
+           [java.nio.channels ServerSocketChannel]
            [java.nio.charset StandardCharsets]))
 
 (defn- nil-handler
@@ -269,3 +270,12 @@
       (let [info (deref sock-info 5000 :timeout)]
         (is (= #{:local-address :remote-address} (set (keys info))))
         (is (= 3468 (.getPort ^InetSocketAddress (:local-address info))))))))
+
+(deftest socket-option-test
+  (with-open [server ^ServerSocketChannel (tcp/start-server
+                                           {:port 3469
+                                            :handler nil-handler
+                                            :reuse-address? true
+                                            :recv-buffer-size 2048})]
+    (is (true? (.getOption server StandardSocketOptions/SO_REUSEADDR)))
+    (is (= 2048 (.getOption server StandardSocketOptions/SO_RCVBUF)))))
