@@ -1,6 +1,6 @@
 (ns teensyp.stream-test
   (:require [clojure.java.io :as io]
-            [clojure.test :refer [deftest is]]
+            [clojure.test :refer [deftest is testing]]
             [teensyp.buffer :as buf]
             [teensyp.server :as tcp]
             [teensyp.stream :as stream])
@@ -46,6 +46,55 @@
     (Thread/sleep 100)
     (is (= ["fooHello" "barWorld" ::tcp/close] @output))
     (is (not (realized? error)))))
+
+(deftest stream-close-test
+  (testing "closing only input stream"
+    (let [result  (promise)
+          handler (stream/stream-handler
+                   (fn [^InputStream in _out]
+                     (.close in)
+                     (deliver result (.read in (byte-array 8) 0 8))))
+          output  (atom [])
+          socket  (reify tcp/Socket
+                    (queue-write [_ buf callback]
+                      (swap! output conj buf)
+                      (when callback (callback)))
+                    (socket-info [_] {}))]
+      (handler socket)
+      (is (= -1 (deref result 1000 :timeout)))
+      (is (= [] @output))))
+  (testing "closing only output stream"
+    (let [error   (promise)
+          handler (stream/stream-handler
+                   (fn [_in ^OutputStream out]
+                     (.close out)
+                     (try (.write out (.getBytes "foo") 0 3)
+                          (catch Exception ex (deliver error ex)))))
+          output  (atom [])
+          socket  (reify tcp/Socket
+                    (queue-write [_ buf callback]
+                      (swap! output conj buf)
+                      (when callback (callback)))
+                    (socket-info [_] {}))]
+      (handler socket)
+      (is (instance? java.io.IOException (deref error 1000 :timeout)))
+      (is (= [] @output))))
+  (testing "closing both streams"
+    (let [done    (promise)
+          handler (stream/stream-handler
+                   (fn [^InputStream in ^OutputStream out]
+                     (.close in)
+                     (.close out)
+                     (deliver done true)))
+          output  (atom [])
+          socket  (reify tcp/Socket
+                    (queue-write [_ buf callback]
+                      (swap! output conj buf)
+                      (when callback (callback)))
+                    (socket-info [_] {}))]
+      (handler socket)
+      (is (true? (deref done 1000 :timeout)))
+      (is (= [::tcp/close] @output)))))
 
 (deftest stream-backpressure-test
   (let [in-stream (promise)
