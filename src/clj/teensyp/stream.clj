@@ -63,9 +63,14 @@
   :read-buffer-size - the size in bytes of the read buffer, defaults to 8K
 
   The socket will be closed when both the InputStream and OutputStream are
-  closed. CLosing the OutputStream will prevent further writes, and closing
-  the InputStream will prevent further reads. Data received after the
-  InputStream has been closed will be silently dropped."
+  closed, or when the 'close' 2-arity of the returned function is called.
+  Closing the OutputStream will prevent further writes, and closing the
+  InputStream will prevent further reads. Data received after the InputStream
+  has been closed will be silently dropped.
+
+  Sometimes its useful for the client to indicate that the InputStream should
+  be closed. If a nil buffer is passed to the 'read' 3-arity of the returned
+  function, this will close the InputStream but not the OutputStream."
   ([handler]
    (stream-handler handler {}))
   ([handler {:keys [executor read-buffer-size] :or {read-buffer-size 8192}}]
@@ -126,16 +131,18 @@
      ([{:keys [^ByteBuffer buffer can-read paused read-lock in-closed] :as state}
        socket ^ByteBuffer buf]
       (with-lock read-lock
-        (if @in-closed
-          (do (.position buf (.limit buf)) state)
-          (do (.compact buffer)
-              (buf/copy buf buffer)
-              (when-not (.hasRemaining buffer)
-                (vreset! paused true)
-                (tcp/pause-reads socket))
-              (.flip buffer)
-             (.signal ^Condition can-read)
-             state))))
+        (cond
+          (nil? buf) (do (vreset! in-closed true)
+                         (.signal ^Condition can-read))
+          @in-closed (.position buf (.limit buf))
+          :else      (do (.compact buffer)
+                         (buf/copy buf buffer)
+                         (when-not (.hasRemaining buffer)
+                           (vreset! paused true)
+                           (tcp/pause-reads socket))
+                         (.flip buffer)
+                         (.signal ^Condition can-read)))
+        state))
      ([{:keys [read-lock write-lock can-read in-closed out-closed]} _ex]
       (with-lock read-lock
         (with-lock write-lock
