@@ -4,7 +4,8 @@
             [teensyp.buffer :as buf]
             [teensyp.server :as tcp]
             [teensyp.stream :as stream])
-  (:import [java.io BufferedReader InputStream OutputStream]
+  (:import [java.io BufferedReader ByteArrayInputStream ByteArrayOutputStream
+            InputStream OutputStream]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]))
 
@@ -156,3 +157,24 @@
     (is (= [::tcp/pause-reads] @output))
     (.read ^InputStream @in-stream (byte-array 4) 0 4)
     (is (= [::tcp/pause-reads ::tcp/resume-reads] @output))))
+
+(deftest wrap-stream-close-test
+  (testing "input stream - reads delegate and closef called on close"
+    (let [closed  (promise)
+          inner   (ByteArrayInputStream. (byte-array [1 2 3 4 5]))
+          wrapped (stream/wrap-stream-close inner #(deliver closed true))
+          buf     (byte-array 5)]
+      (is (= 5 (.read ^InputStream wrapped buf 0 5)))
+      (is (= [1 2 3 4 5] (vec buf)))
+      (is (not (realized? closed)))
+      (.close wrapped)
+      (is (true? (deref closed 1000 :timeout)))))
+  (testing "output stream - writes delegate and closef called on close"
+    (let [closed  (promise)
+          inner   (ByteArrayOutputStream.)
+          wrapped (stream/wrap-stream-close inner #(deliver closed true))]
+      (.write ^OutputStream wrapped (byte-array [1 2 3]) 0 3)
+      (is (= [1 2 3] (vec (.toByteArray inner))))
+      (is (not (realized? closed)))
+      (.close wrapped)
+      (is (true? (deref closed 1000 :timeout))))))

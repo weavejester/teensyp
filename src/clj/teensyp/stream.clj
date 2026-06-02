@@ -3,7 +3,7 @@
   (:require [teensyp.buffer :as buf]
             [teensyp.concurrent :refer [with-lock]]
             [teensyp.server :as tcp])
-  (:import [java.io IOException]
+  (:import [java.io InputStream IOException OutputStream]
            [java.nio ByteBuffer]
            [java.util.concurrent CountDownLatch Executors ExecutorService]
            [java.util.concurrent.locks Condition ReentrantLock]
@@ -42,6 +42,19 @@
       (write [_ b off len] (when-not (zero? len) (writef b off len)))
       (close [_] (closef))
       (flush [_] (flushf))))))
+
+(defprotocol WrapCloseFn
+  (wrap-stream-close ^java.io.Closeable [stream closef]
+    "Wraps an InputStream or an OutputStream such that the function closef is
+    called when the stream is closed."))
+
+(extend-protocol WrapCloseFn
+  InputStream
+  (wrap-stream-close [stream closef]
+    (input-stream #(.read stream %1 %2 %3) #(do (.close stream) (closef))))
+  OutputStream
+  (wrap-stream-close [stream closef]
+    (output-stream #(.write stream %1 %2 %3) #(do (.close stream) (closef))))) 
 
 (defn- new-default-executor []
   (Executors/newFixedThreadPool 32))
