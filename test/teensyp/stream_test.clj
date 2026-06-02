@@ -63,6 +63,21 @@
       (handler socket)
       (is (= -1 (deref result 1000 :timeout)))
       (is (= [] @output))))
+  (testing "closing input stream while reading in separate thread"
+    (let [result  (promise)
+          handler (stream/stream-handler
+                   (fn [^InputStream in _out]
+                    (future (deliver result (.read in (byte-array 8) 0 8)))
+                    (.close in)))
+          output  (atom [])
+          socket  (reify tcp/Socket
+                    (queue-write [_ buf callback]
+                      (swap! output conj buf)
+                      (when callback (callback)))
+                    (socket-info [_] {}))]
+      (handler socket)
+      (is (= -1 (deref result 1000 :timeout)))
+      (is (= [] @output))))
   (testing "closing only output stream"
     (let [error   (promise)
           handler (stream/stream-handler

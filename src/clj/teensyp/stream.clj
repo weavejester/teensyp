@@ -108,6 +108,7 @@
                          (with-lock read-lock
                            (with-lock write-lock
                              (vreset! in-closed true)
+                             (.signal ^Condition can-read) 
                              (if (and @in-closed @out-closed)
                                (close! socket)
                                (when @paused
