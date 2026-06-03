@@ -112,26 +112,30 @@
       (is (= [::tcp/close] @output)))))
 
 (deftest stream-nil-buffer-test
-  (let [read-result (promise)
-        write-done  (promise)
-        handler     (stream/stream-handler
-                     (fn [^InputStream in ^OutputStream out]
-                       (deliver read-result (.read in (byte-array 8) 0 8))
-                       (with-open [w (io/writer out)]
-                         (.write w "response")
-                         (.flush w))
-                       (deliver write-done true)))
-        output      (atom [])
-        socket      (reify tcp/Socket
-                      (queue-write [_ b callback]
-                        (let [x (if (instance? ByteBuffer b) (<-buffer b) b)]
-                          (swap! output conj x)
-                          (when callback (callback))))
-                      (socket-info [_] {}))
-        state       (handler socket)]
+  (let [read-results (atom [])
+        write-done   (promise)
+        read-bytes   (byte-array 8)
+        handler      (stream/stream-handler
+                      (fn [^InputStream in ^OutputStream out]
+                        (swap! read-results conj (.read in read-bytes))
+                        (swap! read-results conj (.read in (byte-array 8)))
+                        (with-open [w (io/writer out)]
+                          (.write w "response")
+                          (.flush w))
+                        (deliver write-done true)))
+        output       (atom [])
+        socket       (reify tcp/Socket
+                       (queue-write [_ b callback]
+                         (let [x (if (instance? ByteBuffer b) (<-buffer b) b)]
+                           (swap! output conj x)
+                           (when callback (callback))))
+                       (socket-info [_] {}))
+        state        (handler socket)]
+    (handler state socket (ByteBuffer/wrap (->bytes "foobar")))
     (handler state socket nil)
-    (is (= -1 (deref read-result 1000 :timeout)))
     (is (true? (deref write-done 1000 :timeout)))
+    (is (= [6 -1] @read-results))
+    (is (= (mapv int [\f \o \o \b \a \r 0 0]) (vec read-bytes)))
     (is (= ["response" ::tcp/close] @output))))
 
 (deftest stream-backpressure-test

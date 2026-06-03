@@ -88,17 +88,17 @@
                          (with-lock read-lock
                            (loop []
                              (cond
-                              @in-closed -1
-                              (not (.hasRemaining buffer))
-                              (do (.await can-read) (recur))
-                              :else
-                              (let [len (min len (.remaining buffer))]
-                                (.get buffer b off len)
-                                (when @paused
-                                  (vreset! paused false)
-                                  (tcp/resume-reads socket))
-                                (when (.hasRemaining buffer) (.signal can-read))
-                                len)))))
+                               (.hasRemaining buffer)
+                               (let [len (min len (.remaining buffer))]
+                                 (.get buffer b off len)
+                                 (when @paused
+                                   (vreset! paused false)
+                                   (tcp/resume-reads socket))
+                                 (when (.hasRemaining buffer)
+                                   (.signal can-read))
+                                 len)
+                               @in-closed -1
+                               :else      (do (.await can-read) (recur))))))
             writef     (fn [b off len]
                          (with-lock write-lock
                            (if @out-closed
