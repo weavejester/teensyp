@@ -242,11 +242,12 @@
            (handle-close key submit ex opts)))))
 
 (defn- handle-key [^SelectionKey key submit opts]
-  (when (.isValid key)
-    (cond
-      (.isReadable key)   (handle-read key submit opts)
-      (.isAcceptable key) (handle-accept key submit opts)
-      (.isWritable key)   (handle-write key submit opts))))
+  (when (and (.isValid key) (.isAcceptable key))
+    (handle-accept key submit opts))
+  (when (and (.isValid key) (.isReadable key))
+    (handle-read key submit opts))
+  (when (and (.isValid key) (.isWritable key))
+    (handle-write key submit opts)))
 
 (defn- server-loop
   [^ServerSocketChannel server-ch ^Selector selector
