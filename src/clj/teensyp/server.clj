@@ -33,18 +33,18 @@
 ;; channel is not closed or paused, and not in the middle of writing or
 ;; still in the middle of handling a previous read (working).
 
-(def ^:private ^:const writing 0x01)
-(def ^:private ^:const working 0x02)
-(def ^:private ^:const closed  0x04)
-(def ^:private ^:const paused  0x08)
+(def ^:private ^:const WRITING 0x01)
+(def ^:private ^:const WORKING 0x02)
+(def ^:private ^:const CLOSED  0x04)
+(def ^:private ^:const PAUSED  0x08)
 
 (defn- bit-flag-set? [flags flag]
   (not (zero? (bit-and flags flag))))
 
 (defn- interest-ops [flags]
   (bit-or (if (zero? flags) SelectionKey/OP_READ 0)
-          (if (and (bit-flag-set? flags writing)
-                   (not (bit-flag-set? flags closed)))
+          (if (and (bit-flag-set? flags WRITING)
+                   (not (bit-flag-set? flags CLOSED)))
             SelectionKey/OP_WRITE 0)))
 
 (defn- update-flags [^SelectionKey key f]
@@ -126,7 +126,7 @@
        (when (instance? ByteBuffer buffer)
          (update-write-limit write-limit buffer))
        (.add write-queue [buffer callback])
-       (set-flag key writing)
+       (set-flag key WRITING)
        (-> key .selector .wakeup)))
   (socket-info [key]
     (-> key .attachment :socket-info)))
@@ -155,9 +155,9 @@
   (when (instance? SocketChannel (.channel key))
     (let [closef (-> key .attachment :closef)]
       (-> key .channel .close)
-      (set-flag key closed)
+      (set-flag key CLOSED)
       (with-lock (-> key .attachment :lock)
-        (if (has-flag? key working)
+        (if (has-flag? key WORKING)
           (vreset! closef #(close-key key submit ex handler))
           (close-key key submit ex handler))))))
 
@@ -167,13 +167,13 @@
     (.configureBlocking ch false)
     (let [{:keys [state] :as context} (new-context ch opts)
           key (.register ch selector 0 context)]
-      (set-flag key working)
+      (set-flag key WORKING)
       (submit #(try (vreset! state (handler key))
                     (catch Exception ex
                       (handle-close key submit ex opts))
                     (finally
-                      (let [flags (unset-flag key working)]
-                        (if (bit-flag-set? flags closed)
+                      (let [flags (unset-flag key WORKING)]
+                        (if (bit-flag-set? flags CLOSED)
                           (@(-> key .attachment :closef))
                           (.wakeup selector)))))))))
 
@@ -181,14 +181,14 @@
   (let [{:keys [^ByteBuffer read-buffer state]} (.attachment key)
         ^Selector selector (.selector key)]
     (.flip read-buffer)
-    (set-flag key working)
+    (set-flag key WORKING)
     (submit #(try (vswap! state handler key read-buffer)
                   (catch Exception ex
                     (handle-close key submit ex opts))
                   (finally
                     (.compact read-buffer)
-                    (let [flags (unset-flag key working)]
-                      (if (bit-flag-set? flags closed)
+                    (let [flags (unset-flag key WORKING)]
+                      (if (bit-flag-set? flags CLOSED)
                         (@(-> key .attachment :closef))
                         (.wakeup selector))))))))
 
@@ -209,8 +209,8 @@
       (handle-close key submit ex opts))))
 
 (defn- resumed? [flags-before flags-after]
-  (and (bit-flag-set? flags-before paused)
-       (not (bit-flag-set? flags-after paused))))
+  (and (bit-flag-set? flags-before PAUSED)
+       (not (bit-flag-set? flags-after PAUSED))))
 
 (defn- handle-write [^SelectionKey key submit opts]
   (let [{:keys [^Queue         write-queue
@@ -223,11 +223,11 @@
                ::close        (do (.close ch)
                                   (handle-close key submit nil opts)
                                   (some-> callback submit))
-               ::pause-reads  (do (set-flag key paused)
+               ::pause-reads  (do (set-flag key PAUSED)
                                   (.poll write-queue)
                                   (some-> callback submit)
                                   (recur))
-               ::resume-reads (do (unset-flag key paused)
+               ::resume-reads (do (unset-flag key PAUSED)
                                   (.poll write-queue)
                                   (some-> callback submit)
                                   (recur))
@@ -236,7 +236,7 @@
                      (.poll write-queue)
                      (some-> callback submit)
                      (recur))))
-             (when (resumed? initial-flags (unset-flag key writing))
+             (when (resumed? initial-flags (unset-flag key WRITING))
                (handle-resumed key submit opts))))
          (catch IOException ex
            (handle-close key submit ex opts)))))
