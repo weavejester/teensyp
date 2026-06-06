@@ -33,6 +33,7 @@
                       (let [x (if (instance? ByteBuffer buf) (<-buffer buf) buf)]
                         (swap! output conj x)
                         (callback)))
+                   (queue-control [_ _ _])
                    (socket-info [_] {}))
         state   (handler socket)]
     (.put buffer (->bytes "Hello\nWor"))
@@ -59,6 +60,7 @@
                     (queue-write [_ buf callback]
                       (swap! output conj buf)
                       (when callback (callback)))
+                    (queue-control [_ _ _])
                     (socket-info [_] {}))]
       (handler socket)
       (is (= -1 (deref result 1000 :timeout)))
@@ -74,6 +76,7 @@
                     (queue-write [_ buf callback]
                       (swap! output conj buf)
                       (when callback (callback)))
+                    (queue-control [_ _ _])
                     (socket-info [_] {}))]
       (handler socket)
       (is (= -1 (deref result 1000 :timeout)))
@@ -106,6 +109,7 @@
                     (queue-write [_ buf callback]
                       (swap! output conj buf)
                       (when callback (callback)))
+                    (queue-control [_ _ _])
                     (socket-info [_] {}))]
       (handler socket)
       (is (true? (deref done 1000 :timeout)))
@@ -129,6 +133,7 @@
                          (let [x (if (instance? ByteBuffer b) (<-buffer b) b)]
                            (swap! output conj x)
                            (when callback (callback))))
+                       (queue-control [_ _ _])
                        (socket-info [_] {}))
         state        (handler socket)]
     (handler state socket (ByteBuffer/wrap (->bytes "foobar")))
@@ -146,8 +151,9 @@
                     {:read-buffer-size 4})
         output    (atom [])
         socket    (reify tcp/Socket
-                    (queue-write [_ buf callback]
-                      (swap! output conj buf)
+                    (queue-write [_ _ _])
+                    (queue-control [_ event callback]
+                      (swap! output conj event)
                       (when callback (callback)))
                     (socket-info [_] {}))
         buf       (ByteBuffer/allocate 4)

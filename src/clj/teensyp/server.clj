@@ -6,8 +6,9 @@
            [java.nio ByteBuffer]
            [java.nio.channels Selector SelectionKey
             ServerSocketChannel SocketChannel]
-           [java.util Queue]
-           [java.util.concurrent ArrayBlockingQueue Executors ExecutorService]
+           [java.util Queue Set]
+           [java.util.concurrent ArrayBlockingQueue ConcurrentHashMap
+            Executors ExecutorService]
            [java.util.concurrent.atomic AtomicInteger]
            [java.util.concurrent.locks ReentrantLock]))
            
@@ -25,8 +26,8 @@
   (let [iter (.iterator coll)]
     (loop []
       (when (.hasNext iter)
-        (f (.next iter))
-        (.remove iter)
+        (when (f (.next iter))
+          (.remove iter))
         (recur)))))
 
 ;; The socket channel is only read from when no flags are set. That is, the
@@ -67,6 +68,8 @@
 (defprotocol Socket
   "A protocol representing a client socket. See also: [[write]], [[close]],
   [[pause-reads]] and [[resume-reads]]."
+  (queue-control [socket control callback]
+    "Queue a control event, such as ::pause-reads or ::resume-reads.")
   (queue-write [socket buffer callback]
     "Queue the buffer to be written to the socket. If the callback is not nil,
     it will be called as a zero argument function once the buffer has been
@@ -89,20 +92,18 @@
   ([socket]          (queue-write socket ::close nil))
   ([socket callback] (queue-write socket ::close callback)))
 
-;; We send pause/resume events to the write queue. This ensures they execute
-;; in the same thread as the server selector, wakes the selector up, and
-;; provides a callback. While we could create a separate system for handling
-;; pause/resume, it's probably not worth the overhead.
-
 (defn pause-reads
   "Pause reads for this Socket. See: [[resume-reads]]."
-  ([socket]          (queue-write socket ::pause-reads nil))
-  ([socket callback] (queue-write socket ::pause-reads callback)))
+  ([socket]          (queue-control socket ::pause-reads nil))
+  ([socket callback] (queue-control socket ::pause-reads callback)))
 
 (defn resume-reads
   "Resume reads for this Socket. See: [[pause-reads]]."
-  ([socket]          (queue-write socket ::resume-reads nil))
-  ([socket callback] (queue-write socket ::resume-reads callback)))
+  ([socket]          (queue-control socket ::resume-reads nil))
+  ([socket callback] (queue-control socket ::resume-reads callback)))
+
+(defn- ex-control-queue-full []
+  (ex-info "Control queue full" {:err ::control-queue-full}))
 
 (defn- ex-write-queue-full []
   (ex-info "Write queue full" {:err ::write-queue-full}))
@@ -118,6 +119,14 @@
 
 (extend-protocol Socket
   SelectionKey
+  (queue-control [key event callback]
+    (let [{:keys [^ArrayBlockingQueue control-queue ^Set pending-set]}
+          (.attachment key)]
+      (when (zero? (.remainingCapacity control-queue))
+        (throw (ex-control-queue-full)))
+      (.add control-queue [event callback])
+      (.add pending-set key)
+      (-> key .selector .wakeup)))
   (queue-write [key buffer callback]
     (let [{:keys [^ArrayBlockingQueue write-queue write-limit]}
           (.attachment key)]
@@ -132,20 +141,24 @@
     (-> key .attachment :socket-info)))
 
 (defn- new-context
-  [^SocketChannel ch
-   {:keys [read-buffer-size write-buffer-size write-queue-size]
-    :or   {read-buffer-size  8192
-           write-buffer-size 32768
-           write-queue-size  64}}]
-  {:write-queue (ArrayBlockingQueue. write-queue-size)
-   :write-limit (AtomicInteger. write-buffer-size)
-   :lock        (ReentrantLock.)
-   :flags       (volatile! 0)
-   :state       (volatile! nil)
-   :read-buffer (ByteBuffer/allocate read-buffer-size)
-   :closef      (volatile! nil)
-   :socket-info {:local-address  (.getLocalAddress ch)
-                 :remote-address (.getRemoteAddress ch)}})
+  [^SocketChannel ch pending-set
+   {:keys [control-queue-size read-buffer-size
+           write-buffer-size write-queue-size]
+    :or   {control-queue-size 32
+           read-buffer-size   8192
+           write-buffer-size  32768
+           write-queue-size   64}}]
+  {:write-queue   (ArrayBlockingQueue. write-queue-size)
+   :write-limit   (AtomicInteger. write-buffer-size)
+   :lock          (ReentrantLock.)
+   :flags         (volatile! 0)
+   :state         (volatile! nil)
+   :read-buffer   (ByteBuffer/allocate read-buffer-size)
+   :closef        (volatile! nil)
+   :pending-set   pending-set
+   :control-queue (ArrayBlockingQueue. control-queue-size)
+   :socket-info   {:local-address  (.getLocalAddress ch)
+                   :remote-address (.getRemoteAddress ch)}})
 
 (defn- close-key [^SelectionKey key submit ex handler]
   (let [state (-> key .attachment :state)]
@@ -161,11 +174,12 @@
           (vreset! closef #(close-key key submit ex handler))
           (close-key key submit ex handler))))))
 
-(defn- handle-accept [^SelectionKey key submit {:keys [handler] :as opts}]
+(defn- handle-accept
+  [^SelectionKey key submit pending {:keys [handler] :as opts}]
   (let [^Selector selector (.selector key)
         ^SocketChannel  ch (.accept ^ServerSocketChannel (.channel key))]
     (.configureBlocking ch false)
-    (let [{:keys [state] :as context} (new-context ch opts)
+    (let [{:keys [state] :as context} (new-context ch pending opts)
           key (.register ch selector 0 context)]
       (set-flag key WORKING)
       (submit #(try (vreset! state (handler key))
@@ -201,63 +215,67 @@
       (catch IOException ex
         (handle-close key submit ex opts)))))
 
-(defn- handle-resumed [^SelectionKey key submit opts]
-  (try
-    (when (pos? (.position ^ByteBuffer (:read-buffer (.attachment key))))
-      (submit-read-handler key submit opts)) 
-    (catch IOException ex
-      (handle-close key submit ex opts))))
-
-(defn- resumed? [flags-before flags-after]
-  (and (bit-flag-set? flags-before PAUSED)
-       (not (bit-flag-set? flags-after PAUSED))))
-
 (defn- handle-write [^SelectionKey key submit opts]
   (let [{:keys [^Queue         write-queue
                 ^AtomicInteger write-limit]} (.attachment key)
-        ^SocketChannel ch (-> key .channel)
-        initial-flags     (-> key .attachment :flags deref)]
+        ^SocketChannel ch (-> key .channel)]
     (try (loop []
            (if-some [[buffer callback] (.peek write-queue)]
-             (condp identical? buffer
-               ::close        (do (.close ch)
-                                  (handle-close key submit nil opts)
-                                  (some-> callback submit))
-               ::pause-reads  (do (set-flag key PAUSED)
-                                  (.poll write-queue)
-                                  (some-> callback submit)
-                                  (recur))
-               ::resume-reads (do (unset-flag key PAUSED)
-                                  (.poll write-queue)
-                                  (some-> callback submit)
-                                  (recur))
+             (if (identical? buffer ::close)
+               (do (.close ch)
+                   (handle-close key submit nil opts)
+                   (some-> callback submit))
                (do (.getAndAdd write-limit (.write ch ^ByteBuffer buffer))
                    (when-not (.hasRemaining ^ByteBuffer buffer)
                      (.poll write-queue)
                      (some-> callback submit)
                      (recur))))
-             (when (resumed? initial-flags (unset-flag key WRITING))
-               (handle-resumed key submit opts))))
+             (unset-flag key WRITING)))
          (catch IOException ex
            (handle-close key submit ex opts)))))
 
-(defn- handle-key [^SelectionKey key submit opts]
+(defn- handle-key [^SelectionKey key submit pending opts]
   (when (and (.isValid key) (.isAcceptable key))
-    (handle-accept key submit opts))
+    (handle-accept key submit pending opts))
   (when (and (.isValid key) (.isReadable key))
     (handle-read key submit opts))
   (when (and (.isValid key) (.isWritable key))
-    (handle-write key submit opts)))
+    (handle-write key submit opts))
+  true)
+
+(defn- handle-resumed [^SelectionKey key submit opts]
+  (when (pos? (.position ^ByteBuffer (:read-buffer (.attachment key))))
+    (submit-read-handler key submit opts))) 
+
+(defn- handle-control [^SelectionKey key submit opts]
+  (when-not (has-flag? key WORKING)
+    (let [{:keys [^Queue control-queue]} (.attachment key)
+          init-paused? (has-flag? key PAUSED)]
+      (loop [paused? init-paused?]
+        (if-some [[event callback] (.poll control-queue)]
+          (case event 
+            ::pause-reads  (do (set-flag key PAUSED)
+                               (some-> callback submit)
+                               (recur true))
+            ::resume-reads (do (unset-flag key PAUSED)
+                               (some-> callback submit)
+                               (recur false)))
+          (when (and init-paused? (not paused?))
+            (handle-resumed key submit opts))))
+      true)))
 
 (defn- server-loop
   [^ServerSocketChannel server-ch ^Selector selector
    ^ExecutorService executor opts]
-  (letfn [(submit [f] (.submit executor ^Runnable f))]
+  (let [submit  #(.submit executor ^Runnable %)
+        pending (ConcurrentHashMap/newKeySet)]
     (try
       (loop []
         (when (.isOpen server-ch)
           (.select selector)
-          (foreach! #(handle-key % submit opts) (.selectedKeys selector))
+          (foreach! #(handle-key % submit pending opts)
+                    (.selectedKeys selector))
+          (foreach! #(handle-control % submit opts) pending)
           (recur)))
       (finally
         (run! #(handle-close % submit nil opts) (.keys selector))
