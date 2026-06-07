@@ -98,9 +98,15 @@
   ([socket callback] (queue-control socket ::pause-reads callback)))
 
 (defn resume-reads
-  "Resume reads for this Socket. See: [[pause-reads]]."
+  "Resume reads for this Socket. Forces a call to the read handler if any
+  data is waiting on the socket buffer. See: [[pause-reads]]."
   ([socket]          (queue-control socket ::resume-reads nil))
   ([socket callback] (queue-control socket ::resume-reads callback)))
+
+(defn force-read
+  "Force a call to the read handler, even if no new data has arrived."
+  ([socket]          (queue-control socket ::force-read nil))
+  ([socket callback] (queue-control socket ::force-read callback)))
 
 (defn- ex-control-queue-full []
   (ex-info "Control queue full" {:err ::control-queue-full}))
@@ -259,7 +265,10 @@
                                (recur true))
             ::resume-reads (do (unset-flag key PAUSED)
                                (some-> callback submit)
-                               (recur false)))
+                               (recur false))
+            ::force-read   (do (submit-read-handler key submit opts)
+                               (some-> callback submit)
+                               (recur paused?)))
           (when (and init-paused? (not paused?))
             (handle-resumed key submit opts))))
       true)))
