@@ -225,18 +225,19 @@
   (let [{:keys [^Queue         write-queue
                 ^AtomicInteger write-limit]} (.attachment key)
         ^SocketChannel ch (-> key .channel)]
+    (unset-flag key WRITING)
     (try (loop []
-           (if-some [[buffer callback] (.peek write-queue)]
+           (when-some [[buffer callback] (.peek write-queue)]
              (if (identical? buffer ::close)
                (do (.close ch)
                    (handle-close key submit nil opts)
                    (some-> callback submit))
                (do (.getAndAdd write-limit (.write ch ^ByteBuffer buffer))
-                   (when-not (.hasRemaining ^ByteBuffer buffer)
-                     (.poll write-queue)
-                     (some-> callback submit)
-                     (recur))))
-             (unset-flag key WRITING)))
+                   (if (.hasRemaining ^ByteBuffer buffer)
+                     (set-flag key WRITING)    ;; partial write
+                     (do (.poll write-queue)
+                         (some-> callback submit)
+                         (recur)))))))
          (catch IOException ex
            (handle-close key submit ex opts)))))
 

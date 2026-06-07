@@ -20,7 +20,8 @@
               (recur))))
         (catch Exception ex
           (prn ex))))
-  ([_ _]))
+  ([_ ex]
+   (when ex (prn ex))))
 
 (defn- stream-double-handler [^InputStream in ^OutputStream out]
   (with-open [r ^BufferedReader (io/reader in)
