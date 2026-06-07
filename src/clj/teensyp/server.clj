@@ -82,7 +82,10 @@
 (defn write
   "Queue up a ByteBuffer to be written a socket defined by the Socket protocol.
   Accepts an optional, zero argument callback function that will be run after
-  the buffer has been written."
+  the buffer has been written. The maximum number of queued buffers per socket
+  is governed by the `:write-queue-size` option, and the maximum size of bytes
+  that can be held in *all* queued buffers is `:write-buffer-size`. Exceeding
+  either of these limits will throw an ExceptionInfo."
   ([socket buffer]          (queue-write socket buffer nil))
   ([socket buffer callback] (queue-write socket buffer callback)))
 
@@ -93,18 +96,24 @@
   ([socket callback] (queue-write socket ::close callback)))
 
 (defn pause-reads
-  "Pause reads for this Socket. See: [[resume-reads]]."
+  "Pause reads for this Socket. See: [[resume-reads]]. This is a control event,
+  and is limited by the `:control-queue-size`. Too many control events queued
+  at once for a single Socket will throw an ExceptionInfo."
   ([socket]          (queue-control socket ::pause-reads nil))
   ([socket callback] (queue-control socket ::pause-reads callback)))
 
 (defn resume-reads
   "Resume reads for this Socket. Forces a call to the read handler if any
-  data is waiting on the socket buffer. See: [[pause-reads]]."
+  data is waiting on the socket buffer. See: [[pause-reads]]. This is a control
+  event, and is limited by the `:control-queue-size`. Too many control events
+  queued at once for a single Socket will throw an ExceptionInfo."
   ([socket]          (queue-control socket ::resume-reads nil))
   ([socket callback] (queue-control socket ::resume-reads callback)))
 
 (defn force-read
-  "Force a call to the read handler, even if no new data has arrived."
+  "Force a call to the read handler, even if no new data has arrived. This is a
+  control event, and is limited by the `:control-queue-size`. Too many control
+  events queued at once for a single Socket will throw an ExceptionInfo."
   ([socket]          (queue-control socket ::force-read nil))
   ([socket callback] (queue-control socket ::force-read callback)))
 
@@ -301,6 +310,7 @@
 
   - `:port` - the port number to listen on (mandatory)
   - `:handler` - a handler function (mandatory, see below)
+  - `:control-queue-size` - the max number of queued control events (default 32)
   - `:executor` - a custom ExecutorService to supply worker threads
   - `:read-buffer-size` - the read buffer size in bytes (default 8K)
   - `:recv-buffer-size` - the receive buffer size (i.e. the SO_RCVBUF option)
