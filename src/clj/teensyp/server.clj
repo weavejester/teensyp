@@ -187,6 +187,7 @@
   (let [^Selector selector (.selector key)
         ^SocketChannel  ch (.accept ^ServerSocketChannel (.channel key))]
     (.configureBlocking ch false)
+    (.setOption ch StandardSocketOptions/TCP_NODELAY true)
     (let [{:keys [state] :as context} (new-context ch pending opts)
           key (.register ch selector 0 context)]
       (set-flag key WORKING)
