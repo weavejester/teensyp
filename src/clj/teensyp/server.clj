@@ -11,7 +11,7 @@
             Executors ExecutorService]
            [java.util.concurrent.atomic AtomicInteger]
            [java.util.concurrent.locks ReentrantLock]))
-           
+
 (defn- server-socket-channel ^ServerSocketChannel [port]
   (doto (ServerSocketChannel/open)
     (.configureBlocking false)
@@ -145,13 +145,13 @@
   (queue-write [key buffer callback]
     (let [{:keys [^ArrayBlockingQueue write-queue write-limit]}
           (.attachment key)]
-       (when (zero? (.remainingCapacity write-queue))
-         (throw (ex-write-queue-full)))
-       (when (instance? ByteBuffer buffer)
-         (update-write-limit write-limit buffer))
-       (.add write-queue [buffer callback])
-       (set-flag key WRITING)
-       (-> key .selector .wakeup)))
+      (when (zero? (.remainingCapacity write-queue))
+        (throw (ex-write-queue-full)))
+      (when (instance? ByteBuffer buffer)
+        (update-write-limit write-limit buffer))
+      (.add write-queue [buffer callback])
+      (set-flag key WRITING)
+      (-> key .selector .wakeup)))
   (socket-info [key]
     (-> key .attachment :socket-info)))
 
@@ -226,7 +226,7 @@
     (try
       (if (neg? (.read ch ^ByteBuffer (:read-buffer (.attachment key))))
         (handle-close key submit nil opts)
-        (submit-read-handler key submit opts)) 
+        (submit-read-handler key submit opts))
       (catch IOException ex
         (handle-close key submit ex opts)))))
 
@@ -261,7 +261,7 @@
 
 (defn- handle-resumed [^SelectionKey key submit opts]
   (when (pos? (.position ^ByteBuffer (:read-buffer (.attachment key))))
-    (submit-read-handler key submit opts))) 
+    (submit-read-handler key submit opts)))
 
 (defn- handle-control [^SelectionKey key submit opts]
   (when-not (has-flag? key WORKING)
@@ -269,7 +269,7 @@
           init-paused? (has-flag? key PAUSED)]
       (loop [paused? init-paused?]
         (if-some [[event callback] (.poll control-queue)]
-          (case event 
+          (case event
             ::pause-reads  (do (set-flag key PAUSED)
                                (some-> callback submit)
                                (recur true))

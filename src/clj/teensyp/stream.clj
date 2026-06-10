@@ -8,7 +8,7 @@
            [java.util.concurrent CountDownLatch Executors ExecutorService]
            [java.util.concurrent.locks Condition ReentrantLock]
            [teensyp IInputStream IOutputStream
-                    ProxyInputStream ProxyOutputStream]))
+            ProxyInputStream ProxyOutputStream]))
 
 (defn input-stream
   "Create an InputStream from a read and optional close function. The read
@@ -108,7 +108,7 @@
                          (with-lock read-lock
                            (with-lock write-lock
                              (vreset! in-closed true)
-                             (.signal ^Condition can-read) 
+                             (.signal ^Condition can-read)
                              (if (and @in-closed @out-closed)
                                (close! socket)
                                (when @paused
@@ -123,7 +123,7 @@
             output     (output-stream writef out-closef)]
         (.submit ^ExecutorService executor ^Runnable #(handler input output))
         {:buffer     buffer
-         :can-read   can-read 
+         :can-read   can-read
          :in-closed  in-closed
          :out-closed out-closed
          :paused     paused

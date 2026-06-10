@@ -26,7 +26,7 @@
 (defn- stream-double-handler [^InputStream in ^OutputStream out]
   (with-open [r ^BufferedReader (io/reader in)
               w (io/writer out)]
-    (try (loop[]
+    (try (loop []
            (when-some [s (.readLine r)]
              (let [x (Integer/parseInt s)]
                (.write w (str (* 2 x) "\n"))
@@ -44,7 +44,7 @@
                 (doseq [i input]
                   (.write w (str i "\n"))
                   (.flush w))))
-            read-thread 
+            read-thread
             (Thread.
              #(let [r ^BufferedReader (io/reader (.getInputStream sock))]
                 (dotimes [_ (count input)]

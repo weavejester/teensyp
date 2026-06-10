@@ -30,9 +30,9 @@
         output   (atom [])
         socket   (reify tcp/Socket
                    (queue-write [_ buf callback]
-                      (let [x (if (instance? ByteBuffer buf) (<-buffer buf) buf)]
-                        (swap! output conj x)
-                        (callback)))
+                     (let [x (if (instance? ByteBuffer buf) (<-buffer buf) buf)]
+                       (swap! output conj x)
+                       (callback)))
                    (queue-control [_ _ _])
                    (socket-info [_] {}))
         state   (handler socket)]
@@ -69,8 +69,8 @@
     (let [result  (promise)
           handler (stream/stream-handler
                    (fn [^InputStream in _out]
-                    (future (deliver result (.read in (byte-array 8) 0 8)))
-                    (.close in)))
+                     (future (deliver result (.read in (byte-array 8) 0 8)))
+                     (.close in)))
           output  (atom [])
           socket  (reify tcp/Socket
                     (queue-write [_ buf callback]
@@ -146,9 +146,9 @@
 (deftest stream-backpressure-test
   (let [in-stream (promise)
         handler   (stream/stream-handler
-                    (fn [^InputStream in ^OutputStream _out]
-                      (deliver in-stream in))
-                    {:read-buffer-size 4})
+                   (fn [^InputStream in ^OutputStream _out]
+                     (deliver in-stream in))
+                   {:read-buffer-size 4})
         output    (atom [])
         socket    (reify tcp/Socket
                     (queue-write [_ _ _])

@@ -190,11 +190,12 @@
                   :handler
                   (fn
                     ([sock]
-                     (tcp/write sock (->buffer "foo")
-                       (fn []
-                         (tcp/write sock (->buffer "bar")
-                           (fn []
-                             (tcp/write sock (->buffer "\r\n")))))))
+                     (tcp/write
+                      sock (->buffer "foo")
+                      (fn []
+                        (tcp/write
+                         sock (->buffer "bar")
+                         (fn [] (tcp/write sock (->buffer "\r\n")))))))
                     ([_ _ _])
                     ([_ _]))})]
     (with-open [sock (Socket. "localhost" 3464)]
@@ -283,24 +284,24 @@
 (deftest force-read-test
   (let [socket-p   (promise)
         read-count (atom 0)]
-     (with-open [_ (tcp/start-server
-                    {:port 3463
-                     :handler
-                     (fn
-                       ([sock] (deliver socket-p sock))
-                       ([_ _ _] (swap! read-count inc))
-                       ([_ _]))})]
-       (with-open [sock (Socket. "localhost" 3463)]
-         (with-open [writer (io/writer (.getOutputStream sock))]
-           (doto writer (.write "foobar") .flush)
-           (Thread/sleep 10)
-           (is (= 1 @read-count))
-           (let [socket (deref socket-p 1000 :timeout)]
-             (is (not= socket :timeout))
-             (tcp/force-read socket)
-             (Thread/sleep 10)
-             (is (= 2 @read-count))
-             (let [p (promise)]
-               (tcp/force-read socket #(deliver p true))
-               (is (true? (deref p 1000 :timeout))))
-             (is (= 3 @read-count))))))))
+    (with-open [_ (tcp/start-server
+                   {:port 3463
+                    :handler
+                    (fn
+                      ([sock] (deliver socket-p sock))
+                      ([_ _ _] (swap! read-count inc))
+                      ([_ _]))})]
+      (with-open [sock (Socket. "localhost" 3463)]
+        (with-open [writer (io/writer (.getOutputStream sock))]
+          (doto writer (.write "foobar") .flush)
+          (Thread/sleep 10)
+          (is (= 1 @read-count))
+          (let [socket (deref socket-p 1000 :timeout)]
+            (is (not= socket :timeout))
+            (tcp/force-read socket)
+            (Thread/sleep 10)
+            (is (= 2 @read-count))
+            (let [p (promise)]
+              (tcp/force-read socket #(deliver p true))
+              (is (true? (deref p 1000 :timeout))))
+            (is (= 3 @read-count))))))))
