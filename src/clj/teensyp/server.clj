@@ -110,13 +110,6 @@
   ([socket]          (queue-control socket ::resume-reads nil))
   ([socket callback] (queue-control socket ::resume-reads callback)))
 
-(defn force-read
-  "Force a call to the read handler, even if no new data has arrived. This is a
-  control event, and is limited by the `:control-queue-size`. Too many control
-  events queued at once for a single Socket will throw an ExceptionInfo."
-  ([socket]          (queue-control socket ::force-read nil))
-  ([socket callback] (queue-control socket ::force-read callback)))
-
 (defn- ex-control-queue-full []
   (ex-info "Control queue full" {:err ::control-queue-full}))
 
@@ -259,28 +252,23 @@
     (handle-write key submit opts))
   true)
 
-(defn- handle-resumed [^SelectionKey key submit opts]
-  (when (pos? (.position ^ByteBuffer (:read-buffer (.attachment key))))
-    (submit-read-handler key submit opts)))
+(defn- has-read-data? [^SelectionKey key]
+  (pos? (.position ^ByteBuffer (:read-buffer (.attachment key)))))
 
 (defn- handle-control [^SelectionKey key submit opts]
   (when-not (has-flag? key WORKING)
-    (let [{:keys [^Queue control-queue]} (.attachment key)
-          init-paused? (has-flag? key PAUSED)]
-      (loop [paused? init-paused?]
+    (let [{:keys [^Queue control-queue]} (.attachment key)]
+      (loop [resumed? false]
         (if-some [[event callback] (.poll control-queue)]
           (case event
             ::pause-reads  (do (set-flag key PAUSED)
                                (some-> callback submit)
-                               (recur true))
+                               (recur resumed?))
             ::resume-reads (do (unset-flag key PAUSED)
                                (some-> callback submit)
-                               (recur false))
-            ::force-read   (do (submit-read-handler key submit opts)
-                               (some-> callback submit)
-                               (recur paused?)))
-          (when (and init-paused? (not paused?))
-            (handle-resumed key submit opts))))
+                               (recur true)))
+          (when (and resumed? (has-read-data? key))
+            (submit-read-handler key submit opts))))
       true)))
 
 (defn- server-loop

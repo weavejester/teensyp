@@ -65,7 +65,6 @@ following functions are supported:
 - `teensyp.server/close` - closes the channel
 - `teensyp.server/pause-reads`  - pause reads until resumed
 - `teensyp.server/resume-reads` - resume reads
-- `teensyp.server/force-read`   - force a read call, even if no new data
 
 All of these functions are asynchronous, and can be supplied with an
 optional zero-argument callback function that will be called once they
