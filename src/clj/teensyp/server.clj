@@ -220,7 +220,8 @@
     (try
       (if (neg? (.read ch ^ByteBuffer (:read-buffer (.attachment key))))
         (handle-close key submit nil opts)
-        (submit-read-handler key submit opts))
+        (when-not (has-flag? key WORKING)
+          (submit-read-handler key submit opts)))
       (catch IOException ex
         (handle-close key submit ex opts)))))
 
