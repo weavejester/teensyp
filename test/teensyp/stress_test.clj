@@ -60,7 +60,7 @@
   (with-open [_ (tcp/start-server
                  {:port 4567
                   :handler double-handler
-                  :write-queue-size 512})]
+                  :write-queue-size 1024})]
     (let [amount  16384
           threads 16
           numbers (partition (/ amount threads) (shuffle (range amount)))
