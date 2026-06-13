@@ -5,8 +5,8 @@
             [teensyp.server :as tcp])
   (:import [java.io IOException]
            [java.nio ByteBuffer]
-           [java.util.concurrent CountDownLatch Executors ExecutorService]
-           [java.util.concurrent.locks Condition ReentrantLock]
+           [java.util.concurrent ExecutorService Executors]
+           [java.util.concurrent.locks Condition LockSupport ReentrantLock]
            [teensyp IInputStream IOutputStream
             ProxyInputStream ProxyOutputStream]))
 
@@ -47,9 +47,10 @@
   (Executors/newFixedThreadPool 32))
 
 (defn- blocking [f]
-  (let [latch (CountDownLatch. 1)]
-    (f #(.countDown latch))
-    (.await latch)))
+  (let [thread   (Thread/currentThread)
+        complete (volatile! false)]
+    (f #(do (vreset! complete true) (LockSupport/unpark thread)))
+    (while (not @complete) (LockSupport/park))))
 
 (defn- write! [sock buf] (blocking #(tcp/write sock buf %)))
 (defn- close! [sock]     (blocking #(tcp/close sock %)))
