@@ -49,6 +49,7 @@
   ^OutputStream [socket]
   (let [lock     (ReentrantLock.)
         done     (volatile! false)
+        closed   (volatile! false)
         blocking (fn [f]
                    (let [thread (Thread/currentThread)]
                      (f #(do (vreset! done true) (LockSupport/unpark thread)))
@@ -57,9 +58,12 @@
     (output-stream
      (fn write [^bytes b off len]
        (with-lock lock
-         (blocking #(tcp/write socket (ByteBuffer/wrap b off len) %))))
+         (if @closed
+           (throw (IOException. "OutputStream closed"))
+           (blocking #(tcp/write socket (ByteBuffer/wrap b off len) %)))))
      (fn close []
        (with-lock lock
+         (vreset! closed true)
          (blocking #(tcp/close socket %)))))))
 
 (defn- new-default-executor []

@@ -4,7 +4,7 @@
             [teensyp.buffer :as buf]
             [teensyp.server :as tcp]
             [teensyp.stream :as stream])
-  (:import [java.io BufferedReader InputStream OutputStream]
+  (:import [java.io BufferedReader IOException InputStream OutputStream]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]))
 
@@ -31,7 +31,8 @@
     (.write stream (->bytes "bar"))
     (is (= ["foo" "bar"] @output))
     (.close stream)
-    (is (= ["foo" "bar" ::tcp/close] @output))))
+    (is (= ["foo" "bar" ::tcp/close] @output))
+    (is (thrown? IOException (.write stream (->bytes "baz"))))))
 
 (deftest stream-handler-test
   (let [error    (promise)
