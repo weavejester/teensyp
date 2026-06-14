@@ -3,7 +3,7 @@
   (:require [teensyp.buffer :as buf]
             [teensyp.concurrent :refer [with-lock]]
             [teensyp.server :as tcp])
-  (:import [java.io IOException]
+  (:import [java.io IOException OutputStream]
            [java.nio ByteBuffer]
            [java.util.concurrent ExecutorService Executors]
            [java.util.concurrent.locks Condition LockSupport ReentrantLock]
@@ -42,6 +42,25 @@
       (write [_ b off len] (when-not (zero? len) (writef b off len)))
       (close [_] (closef))
       (flush [_] (flushf))))))
+
+(defn socket->output-stream
+  "Create a blocking OutputStream from a TeensyP Socket. Writing to the stream
+  will queue a write to the socket, and block until that write had been sent."
+  ^OutputStream [socket]
+  (let [lock     (ReentrantLock.)
+        done     (volatile! false)
+        blocking (fn [f]
+                   (let [thread (Thread/currentThread)]
+                     (f #(do (vreset! done true) (LockSupport/unpark thread)))
+                     (while (not @done) (LockSupport/park))
+                     (vreset! done false)))]
+    (output-stream
+     (fn write [^bytes b off len]
+       (with-lock lock
+         (blocking #(tcp/write socket (ByteBuffer/wrap b off len) %))))
+     (fn close []
+       (with-lock lock
+         (blocking #(tcp/close socket %)))))))
 
 (defn- new-default-executor []
   (Executors/newFixedThreadPool 32))

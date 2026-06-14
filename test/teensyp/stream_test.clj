@@ -14,6 +14,25 @@
 (defn- <-buffer ^String [b]
   (buf/buffer->str b StandardCharsets/US_ASCII))
 
+(deftest socket->output-stream-test
+  (let [output (atom [])
+        socket (reify tcp/Socket
+                 (queue-write [_ buf callback]
+                   (future
+                     (let [x (if (instance? ByteBuffer buf) (<-buffer buf) buf)]
+                       (swap! output conj x)
+                       (callback))))
+                 (queue-control [_ _ _])
+                 (socket-info [_] {}))
+        stream (stream/socket->output-stream socket)]
+    (is (= [] @output))
+    (.write stream (->bytes "foo"))
+    (is (= ["foo"] @output))
+    (.write stream (->bytes "bar"))
+    (is (= ["foo" "bar"] @output))
+    (.close stream)
+    (is (= ["foo" "bar" ::tcp/close] @output))))
+
 (deftest stream-handler-test
   (let [error    (promise)
         handler  (stream/stream-handler
