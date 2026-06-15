@@ -49,30 +49,44 @@
       (is (thrown? IOException (.write stream (->bytes "foo")))))))
 
 (deftest input-stream-handler-test
-  (let [in-stream (promise)
-        handler   (stream/input-stream-handler
+  (testing "basic handler"
+    (let [in-stream (promise)
+          handler   (stream/input-stream-handler
+                     (fn [^InputStream in _socket]
+                       (deliver in-stream in)))
+          socket    (reify tcp/Socket
+                      (queue-write [_ _ _])
+                      (queue-control [_ _ _])
+                      (socket-info [_] {}))
+          out-buf   (ByteBuffer/allocate 16)
+          in-buf    (byte-array 16)
+          state     (handler socket)]
+      (is (instance? InputStream (deref in-stream 1000 :timeout)))
+      (testing "reads"
+        (handler state socket (-> out-buf (.put (->bytes "abc")) .flip))
+        (.compact out-buf)
+        (is (= 3 (.read ^InputStream @in-stream in-buf)))
+        (is (= "abc" (String. in-buf 0 3)))
+        (handler state socket (-> out-buf (.put (->bytes "foobar")) .flip))
+        (.compact out-buf)
+        (is (= 6 (.read ^InputStream @in-stream in-buf 3 13)))
+        (is (= "abcfoobar" (String. in-buf 0 9))))
+      (testing "closing"
+        (handler state nil)
+        (is (= -1 (.read ^InputStream @in-stream in-buf 9 10))))))
+  (testing "custom close function"
+    (let [closed  (promise)
+          handler (stream/input-stream-handler
                    (fn [^InputStream in _socket]
-                     (deliver in-stream in)))
-        socket    (reify tcp/Socket
+                     (.close in))
+                   {:on-close
+                    (fn [_socket] (deliver closed true))})
+          socket  (reify tcp/Socket
                     (queue-write [_ _ _])
                     (queue-control [_ _ _])
-                    (socket-info [_] {}))
-        out-buf   (ByteBuffer/allocate 16)
-        in-buf    (byte-array 16)
-        state     (handler socket)]
-    (is (instance? InputStream (deref in-stream 1000 :timeout)))
-    (testing "reads"
-      (handler state socket (-> out-buf (.put (->bytes "abc")) .flip))
-      (.compact out-buf)
-      (is (= 3 (.read ^InputStream @in-stream in-buf)))
-      (is (= "abc" (String. in-buf 0 3)))
-      (handler state socket (-> out-buf (.put (->bytes "foobar")) .flip))
-      (.compact out-buf)
-      (is (= 6 (.read ^InputStream @in-stream in-buf 3 13)))
-      (is (= "abcfoobar" (String. in-buf 0 9))))
-    (testing "closing"
-      (handler state nil)
-      (is (= -1 (.read ^InputStream @in-stream in-buf 9 10))))))
+                    (socket-info [_] {}))]
+      (handler socket)
+      (is (true? (deref closed 1000 false))))))
 
 (deftest stream-handler-test
   (let [error    (promise)
