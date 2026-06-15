@@ -43,7 +43,7 @@
                        (callback)))
                    (queue-control [_ _ _])
                    (socket-info [_] {}))
-          stream (stream/socket->output-stream socket (fn [_]))]
+          stream (stream/socket->output-stream socket {:on-close (fn [_])})]
       (.close stream)
       (is (= [] @output))
       (is (thrown? IOException (.write stream (->bytes "foo")))))))

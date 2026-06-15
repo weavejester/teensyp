@@ -46,12 +46,13 @@
 (defn socket->output-stream
   "Create a blocking OutputStream from a TeensyP Socket. Writing to the stream
   will queue a write to the socket, and block until that write had been sent.
+
   Closing the stream will close the socket by default, but this behavior can be
-  overridden by supplying a custom closef function that takes the socket as
-  its argument."
+  overridden by supplying a custom close function that takes the socket as
+  its argument, via the :on-close option."
   (^OutputStream [socket]
-   (socket->output-stream socket nil))
-  (^OutputStream [socket closef]
+   (socket->output-stream socket {}))
+  (^OutputStream [socket {:keys [on-close]}]
    (let [lock     (ReentrantLock.)
          done     (volatile! false)
          closed   (volatile! false)
@@ -60,7 +61,7 @@
                       (f #(do (vreset! done true) (LockSupport/unpark thread)))
                       (while (not @done) (LockSupport/park))
                       (vreset! done false)))
-         closef   (or closef (fn [sock] (blocking #(tcp/close sock %))))]
+         on-close (or on-close (fn [sock] (blocking #(tcp/close sock %))))]
      (output-stream
       (fn write [^bytes b off len]
         (with-lock lock
@@ -70,7 +71,7 @@
       (fn close []
         (with-lock lock
           (vreset! closed true)
-          (closef socket)))))))
+          (on-close socket)))))))
 
 (defn- new-default-executor []
   (Executors/newFixedThreadPool 32))
