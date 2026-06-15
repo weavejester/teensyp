@@ -37,7 +37,7 @@
 (deftest input-stream-handler-test
   (let [in-stream (promise)
         handler   (stream/input-stream-handler
-                   (fn [^InputStream in]
+                   (fn [^InputStream in _socket]
                      (deliver in-stream in)))
         socket    (reify tcp/Socket
                     (queue-write [_ _ _])

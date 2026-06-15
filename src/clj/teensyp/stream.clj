@@ -71,8 +71,8 @@
 
 (defn input-stream-handler
   "Create a TeensyP server handler from a function f that takes an InputStream
-  as an argument. The function will be executed in a separate thread when the
-  1-argument accept arity of the handler is called.
+  and a TeensyP Socket as arguments. The function will be executed in a
+  separate thread when the 1-argument accept arity of the handler is called.
   
   Accepts an options map with the following keys:
 
@@ -113,7 +113,7 @@
                          (vreset! closed true)
                          (.signal ^Condition can-read)))
             stream   (input-stream readf closef)]
-        (.submit ^ExecutorService executor ^Runnable #(f stream)) 
+        (.submit ^ExecutorService executor ^Runnable #(f stream socket))
         {:buffer   buffer
          :can-read can-read
          :closed   closed
