@@ -15,24 +15,38 @@
   (buf/buffer->str b StandardCharsets/US_ASCII))
 
 (deftest socket->output-stream-test
-  (let [output (atom [])
-        socket (reify tcp/Socket
-                 (queue-write [_ buf callback]
-                   (future
+  (testing "output sent to socket"
+    (let [output (atom [])
+          socket (reify tcp/Socket
+                   (queue-write [_ buf callback]
+                     (future
+                       (let [x (if (instance? ByteBuffer buf) (<-buffer buf) buf)]
+                         (swap! output conj x)
+                         (callback))))
+                   (queue-control [_ _ _])
+                   (socket-info [_] {}))
+          stream (stream/socket->output-stream socket)]
+      (is (= [] @output))
+      (.write stream (->bytes "foo"))
+      (is (= ["foo"] @output))
+      (.write stream (->bytes "bar"))
+      (is (= ["foo" "bar"] @output))
+      (.close stream)
+      (is (= ["foo" "bar" ::tcp/close] @output))
+      (is (thrown? IOException (.write stream (->bytes "baz"))))))
+  (testing "custom close function"
+    (let [output (atom [])
+          socket (reify tcp/Socket
+                   (queue-write [_ buf callback]
                      (let [x (if (instance? ByteBuffer buf) (<-buffer buf) buf)]
                        (swap! output conj x)
-                       (callback))))
-                 (queue-control [_ _ _])
-                 (socket-info [_] {}))
-        stream (stream/socket->output-stream socket)]
-    (is (= [] @output))
-    (.write stream (->bytes "foo"))
-    (is (= ["foo"] @output))
-    (.write stream (->bytes "bar"))
-    (is (= ["foo" "bar"] @output))
-    (.close stream)
-    (is (= ["foo" "bar" ::tcp/close] @output))
-    (is (thrown? IOException (.write stream (->bytes "baz"))))))
+                       (callback)))
+                   (queue-control [_ _ _])
+                   (socket-info [_] {}))
+          stream (stream/socket->output-stream socket (fn [_]))]
+      (.close stream)
+      (is (= [] @output))
+      (is (thrown? IOException (.write stream (->bytes "foo")))))))
 
 (deftest input-stream-handler-test
   (let [in-stream (promise)

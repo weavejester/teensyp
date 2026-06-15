@@ -45,26 +45,32 @@
 
 (defn socket->output-stream
   "Create a blocking OutputStream from a TeensyP Socket. Writing to the stream
-  will queue a write to the socket, and block until that write had been sent."
-  ^OutputStream [socket]
-  (let [lock     (ReentrantLock.)
-        done     (volatile! false)
-        closed   (volatile! false)
-        blocking (fn [f]
-                   (let [thread (Thread/currentThread)]
-                     (f #(do (vreset! done true) (LockSupport/unpark thread)))
-                     (while (not @done) (LockSupport/park))
-                     (vreset! done false)))]
-    (output-stream
-     (fn write [^bytes b off len]
-       (with-lock lock
-         (if @closed
-           (throw (IOException. "OutputStream closed"))
-           (blocking #(tcp/write socket (ByteBuffer/wrap b off len) %)))))
-     (fn close []
-       (with-lock lock
-         (vreset! closed true)
-         (blocking #(tcp/close socket %)))))))
+  will queue a write to the socket, and block until that write had been sent.
+  Closing the stream will close the socket by default, but this behavior can be
+  overridden by supplying a custom closef function that takes the socket as
+  its argument."
+  (^OutputStream [socket]
+   (socket->output-stream socket nil))
+  (^OutputStream [socket closef]
+   (let [lock     (ReentrantLock.)
+         done     (volatile! false)
+         closed   (volatile! false)
+         blocking (fn [f]
+                    (let [thread (Thread/currentThread)]
+                      (f #(do (vreset! done true) (LockSupport/unpark thread)))
+                      (while (not @done) (LockSupport/park))
+                      (vreset! done false)))
+         closef   (or closef (fn [sock] (blocking #(tcp/close sock %))))]
+     (output-stream
+      (fn write [^bytes b off len]
+        (with-lock lock
+          (if @closed
+            (throw (IOException. "OutputStream closed"))
+            (blocking #(tcp/write socket (ByteBuffer/wrap b off len) %)))))
+      (fn close []
+        (with-lock lock
+          (vreset! closed true)
+          (closef socket)))))))
 
 (defn- new-default-executor []
   (Executors/newFixedThreadPool 32))
