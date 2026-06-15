@@ -69,6 +69,74 @@
 (defn- new-default-executor []
   (Executors/newFixedThreadPool 32))
 
+(defn input-stream-handler
+  "Create a TeensyP server handler from a function f that takes an InputStream
+  as an argument. The function will be executed in a separate thread when the
+  1-argument accept arity of the handler is called.
+  
+  Accepts an options map with the following keys:
+
+  :executor - an executor for running the supplied function, defaults to a
+              fixed thread pool of 32 threads
+  :read-buffer-size - the size in bytes of the read buffer, defaults to 8K
+
+  Triggering the 2-argument close arity of the handler will close the
+  associated InputStream."
+  ([f] (input-stream-handler f {}))
+  ([f {:keys [executor read-buffer-size]
+       :or {executor         (new-default-executor)
+            read-buffer-size 8192}}]
+   (fn
+     ([socket]
+      (let [lock     (ReentrantLock.)
+            can-read (.newCondition lock)
+            paused   (volatile! false)
+            closed   (volatile! false)
+            buffer   (.flip (ByteBuffer/allocate read-buffer-size))
+            readf    (fn [b off len]
+                       (with-lock lock
+                         (loop []
+                           (cond
+                             (.hasRemaining buffer)
+                             (let [len (min len (.remaining buffer))]
+                               (.get buffer b off len)
+                               (when @paused
+                                 (vreset! paused false)
+                                 (tcp/resume-reads socket))
+                               (when (.hasRemaining buffer)
+                                 (.signal can-read))
+                               len)
+                             @closed -1
+                             :else   (do (.await can-read) (recur))))))
+            closef   (fn []
+                       (with-lock lock
+                         (vreset! closed true)
+                         (.signal ^Condition can-read)))
+            stream   (input-stream readf closef)]
+        (.submit ^ExecutorService executor ^Runnable #(f stream)) 
+        {:buffer   buffer
+         :can-read can-read
+         :closed   closed
+         :lock     lock
+         :paused   paused}))
+     ([{:keys [^ByteBuffer buffer can-read paused lock closed] :as state}
+       socket ^ByteBuffer buf]
+      (with-lock lock
+        (if @closed
+          (.position buf (.limit buf))
+          (do (.compact buffer)
+              (buf/copy buf buffer)
+              (when-not (.hasRemaining buffer)
+                (vreset! paused true)
+                (tcp/pause-reads socket))
+              (.flip buffer)
+              (.signal ^Condition can-read)))
+        state))
+     ([{:keys [can-read lock closed]} _exception]
+      (with-lock lock
+        (vreset! closed true)
+        (.signal ^Condition can-read))))))
+
 (defn- blocking [f]
   (let [thread   (Thread/currentThread)
         complete (volatile! false)]
