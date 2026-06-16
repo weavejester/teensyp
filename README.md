@@ -22,6 +22,8 @@ At minimum, TeensyP requires a port to listen on and a handler function:
 (tcp/start-server {:port 3000, :handler demo-handler})
 ```
 
+This returns a Closeable server instance.
+
 ### Handlers
 
 The handler function has three arities, and defines how the server
