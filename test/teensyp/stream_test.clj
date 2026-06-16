@@ -191,6 +191,7 @@
                     (queue-write [_ buf callback]
                       (swap! output conj buf)
                       (when callback (callback)))
+                    (queue-control [_ _ _])
                     (socket-info [_] {}))]
       (handler socket)
       (is (instance? java.io.IOException (deref error 1000 :timeout)))
