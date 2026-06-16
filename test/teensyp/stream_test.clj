@@ -88,6 +88,30 @@
       (handler socket)
       (is (true? (deref closed 1000 false))))))
 
+(deftest input-stream-backpressure-test
+  (let [in-stream (promise)
+        handler   (stream/input-stream-handler
+                   (fn [^InputStream in _socket]
+                     (deliver in-stream in))
+                   {:read-buffer-size 4})
+        output    (atom [])
+        socket    (reify tcp/Socket
+                    (queue-write [_ _ _])
+                    (queue-control [_ event callback]
+                      (swap! output conj event)
+                      (when callback (callback)))
+                    (socket-info [_] {}))
+        buf       (ByteBuffer/allocate 4)
+        state     (handler socket)]
+    (doto buf (.put (->bytes "abc")) .flip)
+    (handler state socket buf)
+    (is (= [] @output))
+    (doto buf .compact (.put (->bytes "def")) .flip)
+    (handler state socket buf)
+    (is (= [::tcp/pause-reads] @output))
+    (.read ^InputStream @in-stream (byte-array 4) 0 4)
+    (is (= [::tcp/pause-reads ::tcp/resume-reads] @output))))
+
 (deftest stream-handler-test
   (let [error    (promise)
         handler  (stream/stream-handler
@@ -188,27 +212,3 @@
       (handler socket)
       (is (true? (deref done 1000 :timeout)))
       (is (= [::tcp/close] @output)))))
-
-(deftest stream-backpressure-test
-  (let [in-stream (promise)
-        handler   (stream/stream-handler
-                   (fn [^InputStream in ^OutputStream _out]
-                     (deliver in-stream in))
-                   {:read-buffer-size 4})
-        output    (atom [])
-        socket    (reify tcp/Socket
-                    (queue-write [_ _ _])
-                    (queue-control [_ event callback]
-                      (swap! output conj event)
-                      (when callback (callback)))
-                    (socket-info [_] {}))
-        buf       (ByteBuffer/allocate 4)
-        state     (handler socket)]
-    (doto buf (.put (->bytes "abc")) .flip)
-    (handler state socket buf)
-    (is (= [] @output))
-    (doto buf .compact (.put (->bytes "def")) .flip)
-    (handler state socket buf)
-    (is (= [::tcp/pause-reads] @output))
-    (.read ^InputStream @in-stream (byte-array 4) 0 4)
-    (is (= [::tcp/pause-reads ::tcp/resume-reads] @output))))
