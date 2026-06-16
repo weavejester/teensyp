@@ -148,18 +148,12 @@
         (vreset! closed true)
         (.signal ^Condition can-read))))))
 
-(defn- blocking [f]
-  (let [thread   (Thread/currentThread)
-        complete (volatile! false)]
-    (f #(do (vreset! complete true) (LockSupport/unpark thread)))
-    (while (not @complete) (LockSupport/park))))
-
-(defn- write! [sock buf] (blocking #(tcp/write sock buf %)))
-(defn- close! [sock]     (blocking #(tcp/close sock %)))
-
 (defn stream-handler
   "Create a Teensyp server handler from a function that takes an InputStream
-  and OutputStream as arguments. Accepts an options map with the following keys:
+  and OutputStream as arguments. This combines the [[socket->output-stream]]
+  and [[input-stream-handler]] functions.
+  
+  Accepts an options map with the following keys:
 
   :executor - an executor for running the handler function, defaults to a fixed
               thread pool of 32 threads
@@ -169,87 +163,14 @@
   closed, or when the 'close' 2-arity of the returned function is called.
   Closing the OutputStream will prevent further writes, and closing the
   InputStream will prevent further reads. Data received after the InputStream
-  has been closed will be silently dropped.
-
-  Sometimes its useful for the client to indicate that the InputStream should
-  be closed. If a nil buffer is passed to the 'read' 3-arity of the returned
-  function, this will close the InputStream but not the OutputStream."
-  ([handler]
-   (stream-handler handler {}))
-  ([handler {:keys [executor read-buffer-size] :or {read-buffer-size 8192}}]
-   (fn
-     ([socket]
-      (let [executor   (or executor (new-default-executor))
-            write-lock (ReentrantLock.)
-            read-lock  (ReentrantLock.)
-            can-read   (.newCondition read-lock)
-            buffer     (.flip (ByteBuffer/allocate read-buffer-size))
-            paused     (volatile! false)
-            in-closed  (volatile! false)
-            out-closed (volatile! false)
-            readf      (fn [b off len]
-                         (with-lock read-lock
-                           (loop []
-                             (cond
-                               (.hasRemaining buffer)
-                               (let [len (min len (.remaining buffer))]
-                                 (.get buffer b off len)
-                                 (when @paused
-                                   (vreset! paused false)
-                                   (tcp/resume-reads socket))
-                                 (when (.hasRemaining buffer)
-                                   (.signal can-read))
-                                 len)
-                               @in-closed -1
-                               :else      (do (.await can-read) (recur))))))
-            writef     (fn [b off len]
-                         (with-lock write-lock
-                           (if @out-closed
-                             (throw (IOException. "Closed"))
-                             (write! socket (ByteBuffer/wrap b off len)))))
-            in-closef  (fn []
-                         (with-lock read-lock
-                           (with-lock write-lock
-                             (vreset! in-closed true)
-                             (.signal ^Condition can-read)
-                             (if (and @in-closed @out-closed)
-                               (close! socket)
-                               (when @paused
-                                 (tcp/resume-reads socket))))))
-            out-closef (fn []
-                         (with-lock read-lock
-                           (with-lock write-lock
-                             (vreset! out-closed true)
-                             (when (and @in-closed @out-closed)
-                               (close! socket)))))
-            input      (input-stream readf in-closef)
-            output     (output-stream writef out-closef)]
-        (.submit ^ExecutorService executor ^Runnable #(handler input output))
-        {:buffer     buffer
-         :can-read   can-read
-         :in-closed  in-closed
-         :out-closed out-closed
-         :paused     paused
-         :read-lock  read-lock
-         :write-lock write-lock}))
-     ([{:keys [^ByteBuffer buffer can-read paused read-lock in-closed] :as state}
-       socket ^ByteBuffer buf]
-      (with-lock read-lock
-        (cond
-          (nil? buf) (do (vreset! in-closed true)
-                         (.signal ^Condition can-read))
-          @in-closed (.position buf (.limit buf))
-          :else      (do (.compact buffer)
-                         (buf/copy buf buffer)
-                         (when-not (.hasRemaining buffer)
-                           (vreset! paused true)
-                           (tcp/pause-reads socket))
-                         (.flip buffer)
-                         (.signal ^Condition can-read)))
-        state))
-     ([{:keys [read-lock write-lock can-read in-closed out-closed]} _ex]
-      (with-lock read-lock
-        (with-lock write-lock
-          (vreset! in-closed true)
-          (vreset! out-closed true)
-          (.signal ^Condition can-read)))))))
+  has been closed will be silently dropped."
+  ([f]
+   (stream-handler f {}))
+  ([f options]
+   (let [closed       (atom 0)
+         on-close-out #(when (= 3 (swap! closed bit-or 1)) (tcp/close %))
+         on-close-in  #(when (= 3 (swap! closed bit-or 2)) (tcp/close %))]
+     (input-stream-handler
+      (fn [in sock]
+        (f in (socket->output-stream sock {:on-close on-close-out})))
+      (assoc options :on-close on-close-in)))))
