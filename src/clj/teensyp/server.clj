@@ -330,7 +330,10 @@
 
   The handler function is guaranteed to execute in serial per channel. That is,
   the accept will always be first, the close will always be last, and reads
-  will always be sequential."
+  will always be sequential.
+  
+  The returned server instance implements `java.io.Closeable`, and therefore
+  can be used with the `with-open` macro."
   ^Closeable [{:keys [port executor recv-buffer-size reuse-address?] :as opts}]
   {:pre [(int? port)]}
   (let [server-ch (server-socket-channel port)
