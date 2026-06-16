@@ -17,7 +17,7 @@
     (.configureBlocking false)
     (.bind (InetSocketAddress. port))))
 
-(defn- server-selector [^ServerSocketChannel server-ch]
+(defn- server-selector ^Selector [^ServerSocketChannel server-ch]
   (let [selector (Selector/open)]
     (.register server-ch selector SelectionKey/OP_ACCEPT)
     selector))
@@ -294,6 +294,10 @@
   (let [processors (.availableProcessors (Runtime/getRuntime))]
     (Executors/newFixedThreadPool (+ 2 processors))))
 
+(defprotocol Server
+  (server-channel ^java.nio.channels.ServerSocketChannel [_]
+    "Return the ServerSocketChannel for the Server."))
+
 (defn start-server
   "Start a TCP server with the supplied map of options:
 
@@ -338,4 +342,9 @@
       (.setOption server-ch StandardSocketOptions/SO_RCVBUF
                   (Integer. ^long recv-buffer-size)))
     (.start (Thread. #(server-loop server-ch selector executor opts)))
-    server-ch))
+    (reify Server
+      (server-channel [_] server-ch)
+      Closeable
+      (close [_]
+        (.close server-ch)
+        (.wakeup selector)))))
