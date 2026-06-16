@@ -19,6 +19,7 @@
     (with-open [server (tcp/start-server {:port 3456, :handler nil-handler})]
       (let [sock (Socket. "localhost" 3456)]
         (is (instance? java.io.Closeable server))
+        (Thread/sleep 10)
         (.close ^java.io.Closeable server)
         (Thread/sleep 10)
         (is (neg? (.read (.getInputStream sock)))))))
