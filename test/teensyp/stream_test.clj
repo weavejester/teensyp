@@ -6,7 +6,8 @@
             [teensyp.stream :as stream])
   (:import [java.io BufferedReader IOException InputStream OutputStream]
            [java.nio ByteBuffer]
-           [java.nio.charset StandardCharsets]))
+           [java.nio.charset StandardCharsets]
+           [java.util.concurrent.locks ReentrantLock]))
 
 (defn- ->bytes ^bytes [^String s]
   (.getBytes s StandardCharsets/US_ASCII))
@@ -14,17 +15,26 @@
 (defn- <-buffer ^String [b]
   (buf/buffer->str b StandardCharsets/US_ASCII))
 
+(defn- fake-socket
+  ([writef] (fake-socket writef (fn [_ _])))
+  ([writef controlf]
+   (let [lock (ReentrantLock.)]
+     (reify tcp/Socket
+       (try-write [_ _] false)
+       (queue-write [_ buf callback] (writef buf callback))
+       (queue-control [_ buf callback] (controlf buf callback))
+       (socket-info [_] {})
+       (socket-lock [_] lock)))))
+
 (deftest socket->output-stream-test
   (testing "output sent to socket"
     (let [output (atom [])
-          socket (reify tcp/Socket
-                   (queue-write [_ buf callback]
-                     (future
-                       (let [x (if (instance? ByteBuffer buf) (<-buffer buf) buf)]
-                         (swap! output conj x)
-                         (callback))))
-                   (queue-control [_ _ _])
-                   (socket-info [_] {}))
+          socket (fake-socket 
+                  (fn [buf callback]
+                    (future
+                      (let [x (if (instance? ByteBuffer buf) (<-buffer buf) buf)]
+                        (swap! output conj x)
+                        (when callback (callback))))))
           stream (stream/socket->output-stream socket)]
       (is (= [] @output))
       (.write stream (->bytes "foo"))
@@ -36,13 +46,10 @@
       (is (thrown? IOException (.write stream (->bytes "baz"))))))
   (testing "custom close function"
     (let [output (atom [])
-          socket (reify tcp/Socket
-                   (queue-write [_ buf callback]
+          socket (fake-socket
+                   (fn [buf]
                      (let [x (if (instance? ByteBuffer buf) (<-buffer buf) buf)]
-                       (swap! output conj x)
-                       (callback)))
-                   (queue-control [_ _ _])
-                   (socket-info [_] {}))
+                       (swap! output conj x))))
           stream (stream/socket->output-stream socket {:on-close (fn [_])})]
       (.close stream)
       (is (= [] @output))
@@ -54,10 +61,7 @@
           handler   (stream/input-stream-handler
                      (fn [^InputStream in _socket]
                        (deliver in-stream in)))
-          socket    (reify tcp/Socket
-                      (queue-write [_ _ _])
-                      (queue-control [_ _ _])
-                      (socket-info [_] {}))
+          socket    (fake-socket (fn [_ _]))
           out-buf   (ByteBuffer/allocate 16)
           in-buf    (byte-array 16)
           state     (handler socket)]
@@ -81,10 +85,7 @@
                      (.close in))
                    {:on-close
                     (fn [_socket] (deliver closed true))})
-          socket  (reify tcp/Socket
-                    (queue-write [_ _ _])
-                    (queue-control [_ _ _])
-                    (socket-info [_] {}))]
+          socket  (fake-socket (fn [_]))]
       (handler socket)
       (is (true? (deref closed 1000 false))))))
 
@@ -95,12 +96,11 @@
                      (deliver in-stream in))
                    {:read-buffer-size 4})
         output    (atom [])
-        socket    (reify tcp/Socket
-                    (queue-write [_ _ _])
-                    (queue-control [_ event callback]
-                      (swap! output conj event)
-                      (when callback (callback)))
-                    (socket-info [_] {}))
+        socket    (fake-socket
+                   (fn [_ _])
+                   (fn [event callback]
+                     (swap! output conj event)
+                     (when callback (callback))))
         buf       (ByteBuffer/allocate 4)
         state     (handler socket)]
     (doto buf (.put (->bytes "abc")) .flip)
@@ -126,13 +126,11 @@
                         (deliver error ex)))))
         buffer   (ByteBuffer/allocate 128)
         output   (atom [])
-        socket   (reify tcp/Socket
-                   (queue-write [_ buf callback]
-                     (let [x (if (instance? ByteBuffer buf) (<-buffer buf) buf)]
-                       (swap! output conj x)
-                       (when callback (callback))))
-                   (queue-control [_ _ _])
-                   (socket-info [_] {}))
+        socket   (fake-socket
+                  (fn [buf callback]
+                    (let [x (if (instance? ByteBuffer buf) (<-buffer buf) buf)]
+                      (swap! output conj x)
+                      (when callback (callback)))))
         state   (handler socket)]
     (.put buffer (->bytes "Hello\nWor"))
     (.flip buffer)
@@ -154,12 +152,9 @@
                      (.close in)
                      (deliver result (.read in (byte-array 8) 0 8))))
           output  (atom [])
-          socket  (reify tcp/Socket
-                    (queue-write [_ buf callback]
-                      (swap! output conj buf)
-                      (when callback (callback)))
-                    (queue-control [_ _ _])
-                    (socket-info [_] {}))]
+          socket  (fake-socket (fn [buf callback]
+                                 (swap! output conj buf)
+                                 (when callback callback)))]
       (handler socket)
       (is (= -1 (deref result 1000 :timeout)))
       (is (= [] @output))))
@@ -170,12 +165,9 @@
                      (future (deliver result (.read in (byte-array 8) 0 8)))
                      (.close in)))
           output  (atom [])
-          socket  (reify tcp/Socket
-                    (queue-write [_ buf callback]
-                      (swap! output conj buf)
-                      (when callback (callback)))
-                    (queue-control [_ _ _])
-                    (socket-info [_] {}))]
+          socket  (fake-socket (fn [buf callback]
+                                 (swap! output conj buf)
+                                 (when callback (callback))))]
       (handler socket)
       (is (= -1 (deref result 1000 :timeout)))
       (is (= [] @output))))
@@ -187,12 +179,9 @@
                      (try (.write out (.getBytes "foo") 0 3)
                           (catch Exception ex (deliver error ex)))))
           output  (atom [])
-          socket  (reify tcp/Socket
-                    (queue-write [_ buf callback]
-                      (swap! output conj buf)
-                      (when callback (callback)))
-                    (queue-control [_ _ _])
-                    (socket-info [_] {}))]
+          socket  (fake-socket (fn [buf callback]
+                                 (swap! output conj buf)
+                                 (when callback (callback))))]
       (handler socket)
       (is (instance? java.io.IOException (deref error 1000 :timeout)))
       (is (= [] @output))))
@@ -204,12 +193,9 @@
                      (.close out)
                      (deliver done true)))
           output  (atom [])
-          socket  (reify tcp/Socket
-                    (queue-write [_ buf callback]
-                      (swap! output conj buf)
-                      (when callback (callback)))
-                    (queue-control [_ _ _])
-                    (socket-info [_] {}))]
+          socket  (fake-socket (fn [buf callback]
+                                 (swap! output conj buf)
+                                 (when callback (callback))))]
       (handler socket)
       (is (true? (deref done 1000 :timeout)))
       (is (= [::tcp/close] @output)))))

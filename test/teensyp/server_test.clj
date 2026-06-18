@@ -235,11 +235,11 @@
                     :handler
                     (fn
                       ([sock]
-                       (try (tcp/write sock (->buffer "toobig\n"))
+                       (try (tcp/queue-write sock (->buffer "toobig\n") nil)
                             (catch Exception ex (swap! exceptions conj ex)))
-                       (try (tcp/write sock (->buffer "1\n"))
-                            (tcp/write sock (->buffer "2\n"))
-                            (tcp/write sock (->buffer "3\n"))
+                       (try (tcp/queue-write sock (->buffer "1\n") nil)
+                            (tcp/queue-write sock (->buffer "2\n") nil)
+                            (tcp/queue-write sock (->buffer "3\n") nil)
                             (catch Exception ex (swap! exceptions conj ex))))
                       ([_ _ _])
                       ([_ _]))})]

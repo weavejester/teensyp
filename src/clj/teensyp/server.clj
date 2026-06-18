@@ -68,26 +68,44 @@
 (defprotocol Socket
   "A protocol representing a client socket. See also: [[write]], [[close]],
   [[pause-reads]] and [[resume-reads]]."
+  (try-write [socket buffer]
+    "Try to immediately write as much of a buffer as it can to the socket
+    without blocking. Returns true if the write completed in its entirity,
+    false if it failed. See [[write]] for a more convenient function.")
   (queue-control [socket control callback]
     "Queue a control event, such as ::pause-reads or ::resume-reads.")
   (queue-write [socket buffer callback]
     "Queue the buffer to be written to the socket. If the callback is not nil,
     it will be called as a zero argument function once the buffer has been
-    written. See [[write]] for a more convenient way of calling this method.")
+    written. See [[write]] for a more convenient function.")
   (socket-info [socket]
     "Return a map of information about the socket's connection. This includes
     keys for :local-address and :remote-address, which are immutable
-    java.net.InetSocketAddress instances."))
+    java.net.InetSocketAddress instances.")
+  (socket-lock [socket]
+    "Return the ReentrantLock for the socket. Useful for guaranteeing
+    multiple atomic writes."))
 
 (defn write
-  "Queue up a ByteBuffer to be written a socket defined by the Socket protocol.
-  Accepts an optional, zero argument callback function that will be run after
-  the buffer has been written. The maximum number of queued buffers per socket
-  is governed by the `:write-queue-size` option, and the maximum size of bytes
+  "Write a ByteBuffer to a socket defined by the Socket protocol. Accepts an
+  optional, zero argument callback function that will be run after the buffer
+  has been written.
+  
+  The write will be attempted immediately; if the buffer could not be written
+  in its entirity, the remaining bytes are queued to be written later. The
+  callback function will only be called when all bytes are written to the
+  socket.
+  
+  The maximum number of queued buffers per socket is governed by the
+  `:write-queue-size` option on the server, and the maximum size of bytes
   that can be held in *all* queued buffers is `:write-buffer-size`. Exceeding
   either of these limits will throw an ExceptionInfo."
-  ([socket buffer]          (queue-write socket buffer nil))
-  ([socket buffer callback] (queue-write socket buffer callback)))
+  ([socket buffer] (write socket buffer nil))
+  ([socket buffer callback]
+   (with-lock (socket-lock socket)
+     (if (try-write socket buffer)
+       (when callback (callback))
+       (queue-write socket buffer callback)))))
 
 (defn close
   "Queue the supplied Socket to be closed. Accepts an optional, zero argument
@@ -127,6 +145,13 @@
 
 (extend-protocol Socket
   SelectionKey
+  (try-write [key buffer]
+    (when-not (identical? buffer ::close)
+      (let [^ArrayBlockingQueue queue (-> key .attachment :write-queue)]
+        (when (.isEmpty queue)
+          (try (.write ^SocketChannel (.channel key) ^ByteBuffer buffer)
+               (not (.hasRemaining ^ByteBuffer buffer))
+               (catch IOException _ex false))))))
   (queue-control [key event callback]
     (let [{:keys [^ArrayBlockingQueue control-queue ^Set pending-set]}
           (.attachment key)]
@@ -146,7 +171,9 @@
       (set-flag key WRITING)
       (-> key .selector .wakeup)))
   (socket-info [key]
-    (-> key .attachment :socket-info)))
+    (-> key .attachment :socket-info))
+  (socket-lock [key]
+    (-> key .attachment :lock)))
 
 (defn- new-context
   [^SocketChannel ch pending-set
