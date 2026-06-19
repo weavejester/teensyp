@@ -8,7 +8,7 @@
             ServerSocketChannel SocketChannel]
            [java.util Queue Set]
            [java.util.concurrent ArrayBlockingQueue ConcurrentHashMap
-            Executors ExecutorService]
+            Executors ExecutorService TimeUnit]
            [java.util.concurrent.atomic AtomicInteger]
            [java.util.concurrent.locks ReentrantLock]))
 
@@ -193,25 +193,18 @@
      :state         (volatile! nil)
      :read-buffer   read-buffer
      :read-view     (volatile! (-> read-buffer .duplicate .flip))
-     :closef        (volatile! nil)
+     :close-ex      (volatile! nil)
      :pending-set   pending-set
      :control-queue (ArrayBlockingQueue. control-queue-size)
      :socket-info   {:local-address  (.getLocalAddress ch)
                      :remote-address (.getRemoteAddress ch)}}))
 
-(defn- close-key [^SelectionKey key submit ex handler]
-  (let [state (-> key .attachment :state)]
-    (submit #(vswap! state handler ex))))
-
-(defn- handle-close [^SelectionKey key submit ex {:keys [handler]}]
-  (when (instance? SocketChannel (.channel key))
-    (let [closef (-> key .attachment :closef)]
-      (-> key .channel .close)
-      (set-flag key CLOSED)
-      (with-lock (-> key .attachment :lock)
-        (if (has-flag? key WORKING)
-          (vreset! closef #(close-key key submit ex handler))
-          (close-key key submit ex handler))))))
+(defn- handle-close [^SelectionKey key ex]
+  (let [{:keys [close-ex ^Set pending-set]} (.attachment key)]
+    (-> key .channel .close)
+    (vswap! close-ex #(or % ex))
+    (set-flag key CLOSED)
+    (.add pending-set key)))
 
 (defn- handle-accept
   [^SelectionKey key submit ^Set pending-set {:keys [handler] :as opts}]
@@ -224,13 +217,11 @@
       (set-flag key WORKING)
       (submit #(try (vreset! state (handler key))
                     (catch Exception ex
-                      (handle-close key submit ex opts))
+                      (handle-close key ex))
                     (finally
                       (.add pending-set key)
-                      (let [flags (unset-flag key WORKING)]
-                        (if (bit-flag-set? flags CLOSED)
-                          (@(-> key .attachment :closef))
-                          (.wakeup selector)))))))))
+                      (unset-flag key WORKING)
+                      (.wakeup selector)))))))
 
 (defn- compact-buffer-by-amount [^ByteBuffer buffer ^long n]
   (if (zero? n)
@@ -238,7 +229,7 @@
     (let [position (.position buffer)]
       (-> buffer (.position n) .compact (.position (- position n))))))
 
-(defn- submit-read-handler [^SelectionKey key submit {:keys [handler] :as opts}]
+(defn- submit-read-handler [^SelectionKey key submit {:keys [handler]}]
   (let [{:keys [^Set pending-set ^ByteBuffer read-buffer read-view state]}
         (.attachment key)]
     (compact-buffer-by-amount read-buffer (.position ^ByteBuffer @read-view))
@@ -248,25 +239,23 @@
       (set-flag key WORKING)
       (submit #(try (vswap! state handler key view)
                     (catch Exception ex
-                      (handle-close key submit ex opts))
+                      (handle-close key ex))
                     (finally
                       (.add pending-set key)
-                      (let [flags (unset-flag key WORKING)]
-                        (if (bit-flag-set? flags CLOSED)
-                          (@(-> key .attachment :closef))
-                          (.wakeup ^Selector selector)))))))))
+                      (unset-flag key WORKING)
+                      (.wakeup ^Selector selector)))))))
 
 (defn- handle-read [^SelectionKey key submit opts]
   (let [^SocketChannel ch (.channel key)]
     (try
       (if (neg? (.read ch ^ByteBuffer (:read-buffer (.attachment key))))
-        (handle-close key submit nil opts)
+        (handle-close key nil)
         (when-not (has-flag? key WORKING)
           (submit-read-handler key submit opts)))
       (catch IOException ex
-        (handle-close key submit ex opts)))))
+        (handle-close key ex)))))
 
-(defn- handle-write [^SelectionKey key submit opts]
+(defn- handle-write [^SelectionKey key submit]
   (let [{:keys [^Queue         write-queue
                 ^AtomicInteger write-limit]} (.attachment key)
         ^SocketChannel ch (-> key .channel)]
@@ -275,7 +264,7 @@
            (when-some [[buffer callback] (.peek write-queue)]
              (if (identical? buffer ::close)
                (do (.close ch)
-                   (handle-close key submit nil opts)
+                   (handle-close key nil)
                    (some-> callback submit))
                (do (.getAndAdd write-limit (.write ch ^ByteBuffer buffer))
                    (if (.hasRemaining ^ByteBuffer buffer)
@@ -284,7 +273,7 @@
                          (some-> callback submit)
                          (recur)))))))
          (catch IOException ex
-           (handle-close key submit ex opts)))))
+           (handle-close key ex)))))
 
 (defn- handle-key [^SelectionKey key submit pending opts]
   (when (and (.isValid key) (.isAcceptable key))
@@ -292,13 +281,20 @@
   (when (and (.isValid key) (.isReadable key))
     (handle-read key submit opts))
   (when (and (.isValid key) (.isWritable key))
-    (handle-write key submit opts))
+    (handle-write key submit))
   true)
 
 (defn- handle-pending-read [^SelectionKey key submit opts]
   (let [{:keys [^ByteBuffer read-buffer read-view]} (.attachment key)]
     (when (> (.position read-buffer) (.limit ^ByteBuffer @read-view))
       (submit-read-handler key submit opts))))
+
+(defn- handle-pending-close [^SelectionKey key submit {:keys [handler]}]
+  (let [{:keys [flags state close-ex]} (.attachment key)
+        flags @flags]
+    (when (and (bit-flag-set? flags CLOSED)
+               (not (bit-flag-set? flags WORKING)))
+      (submit #(handler @state @close-ex)))))
 
 (defn- has-read-data? [^SelectionKey key]
   (let [{:keys [^ByteBuffer read-buffer read-view]} (.attachment key)]
@@ -323,8 +319,15 @@
 (defn- handle-pending [^SelectionKey key submit opts]
   (when-not (has-flag? key WORKING)
     (handle-pending-read key submit opts)
+    (handle-pending-close key submit opts)
     (handle-control key submit opts)
     true))
+
+(defn- shutdown-key [^SelectionKey key {:keys [handler]}]
+  (let [ch (.channel key)]
+    (when (instance? SocketChannel ch)
+      (.close ch)
+      (handler (-> key .attachment :state deref) nil))))
 
 (defn- server-loop
   [^ServerSocketChannel server-ch ^Selector selector
@@ -340,9 +343,10 @@
           (foreach! #(handle-pending % submit opts) pending)
           (recur)))
       (finally
-        (run! #(handle-close % submit nil opts) (.keys selector))
-        (.close selector)
-        (.shutdown executor)))))
+        (.shutdown executor)
+        (.awaitTermination executor 60 TimeUnit/SECONDS)
+        (run! #(shutdown-key % opts) (.keys selector))
+        (.close selector)))))
 
 (defn- new-default-executor []
   (let [processors (.availableProcessors (Runtime/getRuntime))]
