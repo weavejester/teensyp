@@ -30,10 +30,6 @@
           (.remove iter))
         (recur)))))
 
-;; The socket channel is only read from when no flags are set. That is, the
-;; channel is not closed or paused, and not in the middle of writing or
-;; still in the middle of handling a previous read (working).
-
 (def ^:private ^:const WRITING 0x01)
 (def ^:private ^:const WORKING 0x02)
 (def ^:private ^:const CLOSED  0x04)
