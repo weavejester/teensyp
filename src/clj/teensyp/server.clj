@@ -192,7 +192,7 @@
      :flags         (volatile! 0)
      :state         (volatile! nil)
      :read-buffer   read-buffer
-     :read-view     (volatile! (-> read-buffer .duplicate .flip))
+     :read-view     (-> read-buffer .duplicate .flip)
      :close-ex      (volatile! nil)
      :pending-set   pending-set
      :control-queue (ArrayBlockingQueue. control-queue-size)
@@ -229,21 +229,24 @@
     (let [position (.position buffer)]
       (-> buffer (.position n) .compact (.position (- position n))))))
 
+(defn- update-read-view [^ByteBuffer read-view ^ByteBuffer read-buffer]
+  (.position read-view 0)
+  (.limit read-view (.position read-buffer)))
+
 (defn- submit-read-handler [^SelectionKey key submit {:keys [handler]}]
-  (let [{:keys [^Set pending-set ^ByteBuffer read-buffer read-view state]}
-        (.attachment key)]
-    (compact-buffer-by-amount read-buffer (.position ^ByteBuffer @read-view))
-    (let [selector (.selector key)
-          view     (-> read-buffer .duplicate .flip)]
-      (vreset! read-view view)
-      (set-flag key WORKING)
-      (submit #(try (vswap! state handler key view)
-                    (catch Exception ex
-                      (handle-close key ex))
-                    (finally
-                      (.add pending-set key)
-                      (unset-flag key WORKING)
-                      (.wakeup ^Selector selector)))))))
+  (let [{:keys [^Set pending-set read-buffer ^ByteBuffer read-view state]}
+        (.attachment key)
+        ^Selector selector (.selector key)]
+    (compact-buffer-by-amount read-buffer (.position read-view))
+    (update-read-view read-view read-buffer)
+    (set-flag key WORKING)
+    (submit #(try (vswap! state handler key read-view)
+                  (catch Exception ex
+                    (handle-close key ex))
+                  (finally
+                    (.add pending-set key)
+                    (unset-flag key WORKING)
+                    (.wakeup ^Selector selector))))))
 
 (defn- handle-read [^SelectionKey key submit opts]
   (let [^SocketChannel ch (.channel key)]
@@ -285,8 +288,9 @@
   true)
 
 (defn- handle-pending-read [^SelectionKey key submit opts]
-  (let [{:keys [^ByteBuffer read-buffer read-view]} (.attachment key)]
-    (when (> (.position read-buffer) (.limit ^ByteBuffer @read-view))
+  (let [{:keys [^ByteBuffer read-buffer ^ByteBuffer read-view]}
+        (.attachment key)]
+    (when (> (.position read-buffer) (.limit read-view))
       (submit-read-handler key submit opts))))
 
 (defn- handle-pending-close [^SelectionKey key submit {:keys [handler]}]
@@ -297,8 +301,9 @@
       (submit #(handler @state @close-ex)))))
 
 (defn- has-read-data? [^SelectionKey key]
-  (let [{:keys [^ByteBuffer read-buffer read-view]} (.attachment key)]
-    (> (.position read-buffer) (.position ^ByteBuffer @read-view))))
+  (let [{:keys [^ByteBuffer read-buffer ^ByteBuffer read-view]}
+        (.attachment key)]
+    (> (.position read-buffer) (.position read-view))))
 
 (defn- handle-control [^SelectionKey key submit opts]
   (let [{:keys [^Queue control-queue]} (.attachment key)]
