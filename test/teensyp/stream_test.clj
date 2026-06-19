@@ -29,7 +29,7 @@
 (deftest socket->output-stream-test
   (testing "output sent to socket"
     (let [output (atom [])
-          socket (fake-socket 
+          socket (fake-socket
                   (fn [buf callback]
                     (future
                       (let [x (if (instance? ByteBuffer buf) (<-buffer buf) buf)]
@@ -47,9 +47,9 @@
   (testing "custom close function"
     (let [output (atom [])
           socket (fake-socket
-                   (fn [buf]
-                     (let [x (if (instance? ByteBuffer buf) (<-buffer buf) buf)]
-                       (swap! output conj x))))
+                  (fn [buf]
+                    (let [x (if (instance? ByteBuffer buf) (<-buffer buf) buf)]
+                      (swap! output conj x))))
           stream (stream/socket->output-stream socket {:on-close (fn [_])})]
       (.close stream)
       (is (= [] @output))
