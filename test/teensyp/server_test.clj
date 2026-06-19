@@ -120,13 +120,13 @@
                    {:port 3461
                     :handler
                     (fn
-                      ([_] [])
+                      ([_] "")
                       ([state sock buf]
                        (Thread/sleep 20)
                        (tcp/write sock (->buffer "ack"))
-                       (conj state (<-buffer buf)))
+                       (str state (<-buffer buf)))
                       ([state _]
-                       (deliver messages (conj state :close))))})]
+                       (deliver messages (str state "//CLOSE"))))})]
       (with-open [sock (Socket. "localhost" 3461)]
         (.setSoLinger sock true 0)  ; abrupt disconnect
         (with-open [writer (io/writer (.getOutputStream sock))]
@@ -134,7 +134,7 @@
           (Thread/sleep 10)
           (doto writer (.write "bar") .flush)
           (Thread/sleep 30)))
-      (is (= ["foo" "bar" :close] (deref messages 100 :timeout))))))
+      (is (= "foobar//CLOSE" (deref messages 100 :timeout))))))
 
 (deftest server-pause-and-resume-test
   (testing "write, pause, write, resume"
