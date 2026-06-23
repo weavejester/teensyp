@@ -251,6 +251,26 @@
               {:err ::tcp/write-queue-full}]
              (mapv ex-data @exceptions))))))
 
+(deftest server-read-limit-test
+  (let [input (atom [])]
+    (with-open [_ (tcp/start-server
+                   {:port 3460
+                    :read-buffer-size 3
+                    :handler (fn
+                               ([_] {})
+                               ([_ _ buffer]
+                                (swap! input conj (<-buffer buffer))
+                                (Thread/sleep 20))
+                               ([_ _]))})]
+      (with-open [sock (Socket. "localhost" 3460)]
+        (with-open [writer (io/writer (.getOutputStream sock))]
+          (doto writer (.write "foo") .flush)
+          (doto writer (.write "bar") .flush)
+          (Thread/sleep 10)
+          (is (= ["foo"] @input))
+          (Thread/sleep 50)
+          (is (= ["foo" "bar"] @input)))))))
+
 (deftest server-socket-exception-test
   (testing "Exception on init"
     (let [error (promise)]

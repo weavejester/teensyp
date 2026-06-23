@@ -34,13 +34,15 @@
 (def ^:private ^:const WORKING 0x02)
 (def ^:private ^:const CLOSED  0x04)
 (def ^:private ^:const PAUSED  0x08)
+(def ^:private ^:const FULL    0x10)
 
 (defn- bit-flag-set? [flags flag]
   (not (zero? (bit-and flags flag))))
 
 (defn- interest-ops [flags]
   (bit-or (if (or (bit-flag-set? flags PAUSED)
-                  (bit-flag-set? flags CLOSED))
+                  (bit-flag-set? flags CLOSED)
+                  (bit-flag-set? flags FULL))
             0 SelectionKey/OP_READ)
           (if (and (bit-flag-set? flags WRITING)
                    (not (bit-flag-set? flags CLOSED)))
@@ -230,10 +232,11 @@
   (.limit read-view (.position read-buffer)))
 
 (defn- submit-read-handler [^SelectionKey key submit {:keys [handler]}]
-  (let [{:keys [^Set pending-set read-buffer ^ByteBuffer read-view state]}
-        (.attachment key)
+  (let [{:keys [^Set pending-set
+                ^ByteBuffer read-buffer
+                ^ByteBuffer read-view
+                state]} (.attachment key)
         ^Selector selector (.selector key)]
-    (compact-buffer-by-amount read-buffer (.position read-view))
     (update-read-view read-view read-buffer)
     (set-flag key WORKING)
     (submit #(try (vswap! state handler key read-view)
@@ -242,15 +245,23 @@
                   (finally
                     (.add pending-set key)
                     (unset-flag key WORKING)
-                    (.wakeup ^Selector selector))))))
+                    (.wakeup selector))))))
 
 (defn- handle-read [^SelectionKey key submit opts]
-  (let [^SocketChannel ch (.channel key)]
+  (let [{:keys [^ByteBuffer read-buffer ^ByteBuffer read-view]}
+        (.attachment key)
+        ^SocketChannel ch (.channel key)
+        working?          (has-flag? key WORKING)]
     (try
-      (if (neg? (.read ch ^ByteBuffer (:read-buffer (.attachment key))))
-        (handle-close key nil)
-        (when-not (has-flag? key WORKING)
-          (submit-read-handler key submit opts)))
+      (when-not working? 
+        (compact-buffer-by-amount read-buffer (.position read-view)))
+      (when (.hasRemaining read-buffer)
+        (if (neg? (.read ch read-buffer))
+          (handle-close key nil)
+          (do (when-not (.hasRemaining read-buffer)
+                (set-flag key FULL))
+              (when-not working?
+                (submit-read-handler key submit opts)))))
       (catch IOException ex
         (handle-close key ex)))))
 
@@ -286,7 +297,10 @@
 (defn- handle-pending-read [^SelectionKey key submit opts]
   (let [{:keys [^ByteBuffer read-buffer ^ByteBuffer read-view]}
         (.attachment key)]
+    (when (pos? (.position read-view))
+      (unset-flag key FULL))
     (when (> (.position read-buffer) (.limit read-view))
+      (compact-buffer-by-amount read-buffer (.position read-view))
       (submit-read-handler key submit opts))))
 
 (defn- handle-pending-close [^SelectionKey key submit {:keys [handler]}]
