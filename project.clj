@@ -1,4 +1,4 @@
-(defproject dev.weavejester/teensyp "0.7.2"
+(defproject dev.weavejester/teensyp "0.7.3"
   :description "A small Clojure TCP server"
   :url "https://github.com/weavejester/teensyp"
   :license {:name "EPL-2.0 OR GPL-2.0-or-later WITH Classpath-exception-2.0"
