@@ -4,6 +4,7 @@
 profiles.clj
 pom.xml
 pom.xml.asc
+pom.xml.sig
 *.jar
 *.class
 /.lein-*
