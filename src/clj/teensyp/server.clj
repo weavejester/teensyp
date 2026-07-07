@@ -39,13 +39,13 @@
 (defn- bit-flag-set? [flags flag]
   (not (zero? (bit-and flags flag))))
 
+(def ^:private ^:const READ_MASK  (bit-or PAUSED CLOSED FULL))
+(def ^:private ^:const WRITE_MASK (bit-or WRITING CLOSED))
+
 (defn- interest-ops [flags]
-  (bit-or (if (or (bit-flag-set? flags PAUSED)
-                  (bit-flag-set? flags CLOSED)
-                  (bit-flag-set? flags FULL))
+  (bit-or (if (bit-flag-set? flags READ_MASK)
             0 SelectionKey/OP_READ)
-          (if (and (bit-flag-set? flags WRITING)
-                   (not (bit-flag-set? flags CLOSED)))
+          (if (= WRITING (bit-and flags WRITE_MASK))
             SelectionKey/OP_WRITE 0)))
 
 (defn- update-flags [^SelectionKey key f]
