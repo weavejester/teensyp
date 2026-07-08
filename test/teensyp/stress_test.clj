@@ -57,7 +57,7 @@
         @output-sum))))
 
 (deftest input-output-stress-test
-  (with-open [_ (tcp/start-server
+  (with-open [_ (tcp/run-server
                  {:port 4567
                   :handler double-handler
                   :write-queue-size 1024})]
@@ -70,7 +70,7 @@
              (time (reduce + (map deref results))))))))
 
 (deftest streaming-stress-test
-  (with-open [_ (tcp/start-server
+  (with-open [_ (tcp/run-server
                  {:port 4568
                   :handler (stream/stream-handler stream-double-handler)})]
     (let [amount  4096

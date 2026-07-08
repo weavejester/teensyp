@@ -15,7 +15,7 @@
 
 (deftest server-close-test
   (testing "external close"
-    (with-open [server (tcp/start-server {:port 3456, :handler nil-handler})]
+    (with-open [server (tcp/run-server {:port 3456, :handler nil-handler})]
       (let [sock (Socket. "localhost" 3456)]
         (is (instance? java.io.Closeable server))
         (Thread/sleep 10)
@@ -28,7 +28,7 @@
                     ([_])
                     ([_ sock _] (tcp/close sock) nil)
                     ([_ _] (reset! closed? true)))]
-      (with-open [_ (tcp/start-server {:port 3556, :handler handler})]
+      (with-open [_ (tcp/run-server {:port 3556, :handler handler})]
         (let [sock (Socket. "localhost" 3556)]
           (with-open [writer (io/writer (.getOutputStream sock))]
             (doto writer (.write "foo") .flush)
@@ -47,7 +47,7 @@
   ([_state _exception]))
 
 (deftest server-write-test
-  (with-open [_ (tcp/start-server
+  (with-open [_ (tcp/run-server
                  {:port 3457
                   :handler hello-handler})]
     (let [sock (Socket. "localhost" 3457)]
@@ -67,7 +67,7 @@
   ([_state _exception]))
 
 (deftest server-echo-test
-  (with-open [_ (tcp/start-server
+  (with-open [_ (tcp/run-server
                  {:port 3458
                   :handler echo-handler})]
     (let [sock (Socket. "localhost" 3458)]
@@ -82,7 +82,7 @@
 
 (deftest server-socket-close-test
   (let [closed? (promise)]
-    (with-open [_ (tcp/start-server
+    (with-open [_ (tcp/run-server
                    {:port 3459
                     :handler
                     (fn
@@ -101,7 +101,7 @@
   ([_state _ex]))
 
 (deftest server-readline-test
-  (with-open [_ (tcp/start-server
+  (with-open [_ (tcp/run-server
                  {:port 3460
                   :handler reverse-line-handler})]
     (with-open [sock (Socket. "localhost" 3460)]
@@ -116,7 +116,7 @@
 
 (deftest server-ordering-test
   (let [messages (promise)]
-    (with-open [_ (tcp/start-server
+    (with-open [_ (tcp/run-server
                    {:port 3461
                     :handler
                     (fn
@@ -140,7 +140,7 @@
   (testing "write, pause, write, resume"
     (let [read-count (atom 0)
           socket     (atom nil)]
-      (with-open [_ (tcp/start-server
+      (with-open [_ (tcp/run-server
                      {:port 3462
                       :handler
                       (fn
@@ -164,7 +164,7 @@
   (testing "write more than can be read, pause, resume"
     (let [read-count (atom 0)
           socket     (atom nil)]
-      (with-open [_ (tcp/start-server
+      (with-open [_ (tcp/run-server
                      {:port 3463
                       :handler
                       (fn
@@ -186,7 +186,7 @@
   (testing "write, buffer, resume"
     (let [read-count (atom 0)
           socket     (atom nil)]
-      (with-open [_ (tcp/start-server
+      (with-open [_ (tcp/run-server
                      {:port 3462
                       :handler
                       (fn
@@ -209,7 +209,7 @@
             (is (= 2 @read-count) "shouldn't read if read buffer empty")))))))
 
 (deftest server-write-callback-test
-  (with-open [_ (tcp/start-server
+  (with-open [_ (tcp/run-server
                  {:port 3464
                   :handler
                   (fn
@@ -228,7 +228,7 @@
 
 (deftest server-write-limit-test
   (let [exceptions (atom [])]
-    (with-open [_ (tcp/start-server
+    (with-open [_ (tcp/run-server
                    {:port 3465
                     :write-buffer-size 4
                     :write-queue-size 2
@@ -253,7 +253,7 @@
 
 (deftest server-read-limit-test
   (let [input (atom [])]
-    (with-open [_ (tcp/start-server
+    (with-open [_ (tcp/run-server
                    {:port 3460
                     :read-buffer-size 3
                     :handler (fn
@@ -274,7 +274,7 @@
 (deftest server-socket-exception-test
   (testing "Exception on init"
     (let [error (promise)]
-      (with-open [_ (tcp/start-server
+      (with-open [_ (tcp/run-server
                      {:port 3466
                       :handler
                       (fn
@@ -287,7 +287,7 @@
           (is (= "Testing" (ex-message err)))))))
   (testing "Exception on message receive"
     (let [error (promise)]
-      (with-open [_ (tcp/start-server
+      (with-open [_ (tcp/run-server
                      {:port 3467
                       :handler
                       (fn
@@ -304,7 +304,7 @@
 
 (deftest server-socket-info-test
   (let [sock-info (promise)]
-    (with-open [_ (tcp/start-server
+    (with-open [_ (tcp/run-server
                    {:port 3468
                     :handler
                     (fn
@@ -317,7 +317,7 @@
         (is (= 3468 (.getPort ^InetSocketAddress (:local-address info))))))))
 
 (deftest socket-option-test
-  (with-open [server (tcp/server-channel (tcp/start-server
+  (with-open [server (tcp/server-channel (tcp/run-server
                                           {:port 3469
                                            :handler nil-handler
                                            :reuse-address? true
@@ -328,7 +328,7 @@
 (deftest direct-read-buffer-test
   (testing "default is not direct"
     (let [direct-buffer? (promise)]
-      (with-open [_ (tcp/start-server
+      (with-open [_ (tcp/run-server
                      {:port 3469
                       :handler
                       (fn
@@ -343,7 +343,7 @@
         (is (false? (deref direct-buffer? 1000 :timeout))))))
   (testing "direct buffer can be specified"
     (let [direct-buffer? (promise)]
-      (with-open [_ (tcp/start-server
+      (with-open [_ (tcp/run-server
                      {:port 3470
                       :direct-read-buffer? true
                       :handler

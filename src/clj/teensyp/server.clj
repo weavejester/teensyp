@@ -395,7 +395,7 @@
   (server-channel ^java.nio.channels.ServerSocketChannel [_]
     "Return the ServerSocketChannel for the Server."))
 
-(defn start-server
+(defn run-server
   "Start a TCP server with the supplied map of options:
 
   - `:port` - the port number to listen on (mandatory)
