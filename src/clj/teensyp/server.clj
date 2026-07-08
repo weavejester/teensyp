@@ -432,7 +432,8 @@
   
   The returned server instance implements `java.io.Closeable`, and therefore
   can be used with the `with-open` macro."
-  ^Closeable [{:keys [port executor recv-buffer-size reuse-address?] :as opts}]
+  ^Closeable
+  [& {:keys [port executor recv-buffer-size reuse-address?] :as opts}]
   {:pre [(int? port)]}
   (let [server-ch (server-socket-channel port)
         selector  (server-selector server-ch)

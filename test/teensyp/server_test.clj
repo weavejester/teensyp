@@ -357,3 +357,15 @@
             (.write writer "Hello World")
             (.flush writer)))
         (is (true? (deref direct-buffer? 1000 :timeout)))))))
+
+(deftest server-variadic-options-test
+  (with-open [_ (tcp/run-server :port 3471 :handler echo-handler)]
+    (let [sock (Socket. "localhost" 3471)]
+      (with-open [writer (io/writer (.getOutputStream sock))]
+        (with-open [reader ^BufferedReader (io/reader (.getInputStream sock))]
+          (doto writer (.write "foo\n") .flush)
+          (is (= "foo" (.readLine reader)))
+          (doto writer (.write "bar\n") .flush)
+          (is (= "bar" (.readLine reader)))
+          (doto writer (.write "foo") (.write "bar\n") .flush)
+          (is (= "foobar" (.readLine reader))))))))

@@ -19,7 +19,7 @@ At minimum, TeensyP requires a port to listen on and a handler function:
 ```clojure
 (require '[teensyp.server :as tcp])
 
-(tcp/run-server {:port 3000, :handler demo-handler})
+(tcp/run-server :handler demo-handler :port 3000)
 ```
 
 This returns a Closeable server instance.
