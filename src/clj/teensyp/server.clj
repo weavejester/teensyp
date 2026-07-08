@@ -30,6 +30,9 @@
           (.remove iter))
         (recur)))))
 
+(defrecord Context [close-ex control-queue flags lock pending-set read-buffer
+                    read-view socket-info state write-limit write-queue])
+
 (def ^:private ^:const WRITING 0x01)
 (def ^:private ^:const WORKING 0x02)
 (def ^:private ^:const CLOSED  0x04)
@@ -49,9 +52,9 @@
             SelectionKey/OP_WRITE 0)))
 
 (defn- update-flags [^SelectionKey key f]
-  (let [context (.attachment key)
-        vflags  (:flags context)]
-    (with-lock (:lock context)
+  (let [^Context context (.attachment key)
+        vflags           (.flags context)]
+    (with-lock (.lock context)
       (let [flags (vswap! vflags f)]
         (when (.isValid key)
           (.interestOps key (interest-ops flags)))
@@ -64,7 +67,8 @@
   (update-flags key #(bit-and-not % flag)))
 
 (defn- has-flag? [^SelectionKey key flag]
-  (-> key .attachment :flags deref (bit-flag-set? flag)))
+  (let [^Context context (.attachment key)]
+    (-> context .flags deref (bit-flag-set? flag))))
 
 (defprotocol Socket
   "A protocol representing a client socket. See also: [[write]], [[close]],
@@ -148,24 +152,25 @@
   SelectionKey
   (try-write [key buffer]
     (when-not (identical? buffer ::close)
-      (let [^ArrayBlockingQueue queue (-> key .attachment :write-queue)]
+      (let [^Context context          (.attachment key)
+            ^ArrayBlockingQueue queue (.write-queue context)]
         (when (.isEmpty queue)
           (try (.write ^SocketChannel (.channel key) ^ByteBuffer buffer)
                (not (.hasRemaining ^ByteBuffer buffer))
                (catch IOException _ex false))))))
   (queue-control [key event callback]
-    (let [context                           (.attachment key)
-          ^ArrayBlockingQueue control-queue (:control-queue context)
-          ^Set pending-set                  (:pending-set context)]
+    (let [^Context context                  (.attachment key)
+          ^ArrayBlockingQueue control-queue (.control-queue context)
+          ^Set pending-set                  (.pending-set context)]
       (when (zero? (.remainingCapacity control-queue))
         (throw (ex-control-queue-full)))
       (.add control-queue [event callback])
       (.add pending-set key)
       (-> key .selector .wakeup)))
   (queue-write [key buffer callback]
-    (let [context                         (.attachment key)
-          ^ArrayBlockingQueue write-queue (:write-queue context)
-          write-limit                     (:write-limit context)]
+    (let [^Context context                (.attachment key)
+          ^ArrayBlockingQueue write-queue (.write-queue context)
+          write-limit                     (.write-limit context)]
       (when (zero? (.remainingCapacity write-queue))
         (throw (ex-write-queue-full)))
       (when (instance? ByteBuffer buffer)
@@ -174,12 +179,9 @@
       (set-flag key WRITING)
       (-> key .selector .wakeup)))
   (socket-info [key]
-    (-> key .attachment :socket-info))
+    (.socket-info ^Context (.attachment key)))
   (socket-lock [key]
-    (-> key .attachment :lock)))
-
-(defrecord Context [close-ex control-queue flags lock pending-set read-buffer
-                    read-view socket-info state write-limit write-queue])
+    (.lock ^Context (.attachment key))))
 
 (defn- channel-socket-info [^SocketChannel ch]
   {:local-address  (.getLocalAddress ch)
@@ -207,9 +209,9 @@
                (ArrayBlockingQueue. write-queue-size)))) ; :write-queue
 
 (defn- handle-close [^SelectionKey key ex]
-  (let [context          (.attachment key)
-        close-ex         (:close-ex context)
-        ^Set pending-set (:pending-set context)]
+  (let [^Context context (.attachment key)
+        close-ex         (.close-ex context)
+        ^Set pending-set (.pending-set context)]
     (-> key .channel .close)
     (vswap! close-ex #(or % ex))
     (set-flag key CLOSED)
@@ -221,9 +223,9 @@
         ^SocketChannel  ch (.accept ^ServerSocketChannel (.channel key))]
     (.configureBlocking ch false)
     (.setOption ch StandardSocketOptions/TCP_NODELAY true)
-    (let [context (new-context ch pending-set opts)
-          state   (:state context)
-          key     (.register ch selector 0 context)]
+    (let [^Context context (new-context ch pending-set opts)
+          state            (.state context)
+          key              (.register ch selector 0 context)]
       (set-flag key WORKING)
       (submit #(try (vreset! state (handler key))
                     (catch Exception ex
@@ -245,11 +247,11 @@
 
 (defn- submit-read-handler [^SelectionKey key submit {:keys [handler]}]
   (let [^Selector selector      (.selector key)
-        context                 (.attachment key)
-        ^Set pending-set        (:pending-set context)
-        ^ByteBuffer read-buffer (:read-buffer context)
-        ^ByteBuffer read-view   (:read-view context)
-        state                   (:state context)]
+        ^Context context        (.attachment key)
+        ^Set pending-set        (.pending-set context)
+        ^ByteBuffer read-buffer (.read-buffer context)
+        ^ByteBuffer read-view   (.read-view context)
+        state                   (.state context)]
     (update-read-view read-view read-buffer)
     (set-flag key WORKING)
     (submit #(try (vswap! state handler key read-view)
@@ -261,9 +263,9 @@
                     (.wakeup selector))))))
 
 (defn- handle-read [^SelectionKey key submit opts]
-  (let [context                 (.attachment key)
-        ^ByteBuffer read-buffer (:read-buffer context)
-        ^ByteBuffer read-view   (:read-view context)
+  (let [^Context context        (.attachment key)
+        ^ByteBuffer read-buffer (.read-buffer context)
+        ^ByteBuffer read-view   (.read-view context)
         ^SocketChannel ch       (.channel key)
         working?                (has-flag? key WORKING)]
     (try
@@ -280,9 +282,9 @@
         (handle-close key ex)))))
 
 (defn- handle-write [^SelectionKey key submit]
-  (let [context                    (.attachment key)
-        ^Queue write-queue         (:write-queue context)
-        ^AtomicInteger write-limit (:write-limit context)
+  (let [^Context context           (.attachment key)
+        ^Queue write-queue         (.write-queue context)
+        ^AtomicInteger write-limit (.write-limit context)
         ^SocketChannel ch          (.channel key)]
     (unset-flag key WRITING)
     (try (loop []
@@ -310,9 +312,9 @@
   true)
 
 (defn- handle-pending-read [^SelectionKey key submit opts]
-  (let [context                 (.attachment key)
-        ^ByteBuffer read-buffer (:read-buffer context)
-        ^ByteBuffer read-view   (:read-view context)]
+  (let [^Context context        (.attachment key)
+        ^ByteBuffer read-buffer (.read-buffer context)
+        ^ByteBuffer read-view   (.read-view context)]
     (when (pos? (.position read-view))
       (unset-flag key FULL))
     (when (> (.position read-buffer) (.limit read-view))
@@ -320,22 +322,22 @@
       (submit-read-handler key submit opts))))
 
 (defn- handle-pending-close [^SelectionKey key submit {:keys [handler]}]
-  (let [context  (.attachment key)
-        close-ex (:close-ex context)
-        state    (:state context)
-        flags    (-> context :flags deref)]
+  (let [^Context context  (.attachment key)
+        close-ex          (.close-ex context)
+        state             (.state context)
+        flags             (-> context .flags deref)]
     (when (and (bit-flag-set? flags CLOSED)
                (not (bit-flag-set? flags WORKING)))
       (submit #(handler @state @close-ex)))))
 
 (defn- has-read-data? [^SelectionKey key]
-  (let [context                 (.attachment key)
-        ^ByteBuffer read-buffer (:read-buffer context)
-        ^ByteBuffer read-view   (:read-view context)]
+  (let [^Context context        (.attachment key)
+        ^ByteBuffer read-buffer (.read-buffer context)
+        ^ByteBuffer read-view   (.read-view context)]
     (> (.position read-buffer) (.position read-view))))
 
 (defn- handle-control [^SelectionKey key submit opts]
-  (let [^Queue control-queue (:control-queue (.attachment key))]
+  (let [^Queue control-queue (.control-queue ^Context (.attachment key))]
     (loop [resumed? false]
       (if-some [[event callback] (.poll control-queue)]
         (case event
@@ -361,7 +363,8 @@
   (let [ch (.channel key)]
     (when (instance? SocketChannel ch)
       (.close ch)
-      (handler (-> key .attachment :state deref) nil))))
+      (let [^Context context (.attachment key)]
+        (handler (-> context .state deref) nil)))))
 
 (defn- server-loop
   [^ServerSocketChannel server-ch ^Selector selector
