@@ -5,7 +5,7 @@
             [teensyp.server :as tcp])
   (:import [java.io IOException OutputStream]
            [java.nio ByteBuffer]
-           [java.util.concurrent ExecutorService Executors]
+           [java.util.concurrent Executor Executors]
            [java.util.concurrent.locks Condition LockSupport ReentrantLock]
            [teensyp IInputStream IOutputStream
             ProxyInputStream ProxyOutputStream]))
@@ -76,6 +76,8 @@
 (defn- new-default-executor []
   (Executors/newFixedThreadPool 32))
 
+(defrecord StreamState [buffer canread closed lock paused])
+
 (defn input-stream-handler
   "Create a TeensyP server handler from a function f that takes an InputStream
   and a TeensyP Socket as arguments. The function will be executed in a
@@ -124,29 +126,25 @@
                          (on-close socket)
                          (.signal ^Condition can-read)))
             stream   (input-stream readf closef)]
-        (.submit ^ExecutorService executor ^Runnable #(f stream socket))
-        {:buffer   buffer
-         :can-read can-read
-         :closed   closed
-         :lock     lock
-         :paused   paused}))
-     ([{:keys [^ByteBuffer buffer can-read paused lock closed] :as state}
-       socket ^ByteBuffer buf]
-      (with-lock lock
-        (if @closed
+        (.execute ^Executor executor ^Runnable #(f stream socket))
+        (->StreamState buffer can-read closed lock paused)))
+     ([^StreamState state socket ^ByteBuffer buf]
+      (with-lock (.lock state)
+        (if @(.closed state)
           (.position buf (.limit buf))
-          (do (.compact buffer)
-              (buf/copy buf buffer)
-              (when-not (.hasRemaining buffer)
-                (vreset! paused true)
-                (tcp/pause-reads socket))
-              (.flip buffer)
-              (.signal ^Condition can-read)))
+          (let [^ByteBuffer buffer (.buffer state)]
+            (.compact buffer)
+            (buf/copy buf buffer)
+            (when-not (.hasRemaining buffer)
+              (vreset! (.paused state) true)
+              (tcp/pause-reads socket))
+            (.flip buffer)
+            (.signal ^Condition (.canread state))))
         state))
-     ([{:keys [can-read lock closed]} _exception]
-      (with-lock lock
-        (vreset! closed true)
-        (.signal ^Condition can-read))))))
+     ([^StreamState state _exception]
+      (with-lock (.lock state)
+        (vreset! (.closed state) true)
+        (.signal ^Condition (.canread state)))))))
 
 (defn stream-handler
   "Create a Teensyp server handler from a function that takes an InputStream
