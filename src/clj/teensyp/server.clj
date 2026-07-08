@@ -39,17 +39,17 @@
 (def ^:private ^:const PAUSED  0x08)
 (def ^:private ^:const FULL    0x10)
 
-(defn- bit-flag-set? [flags flag]
+(defn- bit-flag-set? [^long flags ^long flag]
   (not (zero? (bit-and flags flag))))
 
 (def ^:private ^:const READ_MASK  (bit-or PAUSED CLOSED FULL))
 (def ^:private ^:const WRITE_MASK (bit-or WRITING CLOSED))
 
-(defn- interest-ops [flags]
+(defn- interest-ops [^long flags]
   (bit-or (if (bit-flag-set? flags READ_MASK)
-            0 SelectionKey/OP_READ)
+            0 (long SelectionKey/OP_READ))
           (if (= WRITING (bit-and flags WRITE_MASK))
-            SelectionKey/OP_WRITE 0)))
+            (long SelectionKey/OP_WRITE) 0)))
 
 (defn- update-flags [^SelectionKey key f]
   (let [^Context context (.attachment key)
@@ -60,11 +60,11 @@
           (.interestOps key (interest-ops flags)))
         flags))))
 
-(defn- set-flag [key flag]
-  (update-flags key #(bit-or % flag)))
+(defn- set-flag [key ^long flag]
+  (update-flags key #(bit-or ^long % flag)))
 
-(defn- unset-flag [key flag]
-  (update-flags key #(bit-and-not % flag)))
+(defn- unset-flag [key ^long flag]
+  (update-flags key #(bit-and-not ^long % flag)))
 
 (defn- has-flag? [^SelectionKey key flag]
   (let [^Context context (.attachment key)]

@@ -103,7 +103,7 @@
             paused   (volatile! false)
             closed   (volatile! false)
             buffer   (.flip (ByteBuffer/allocate read-buffer-size))
-            readf    (fn [b off len]
+            readf    (fn [b off ^long len]
                        (with-lock lock
                          (loop []
                            (cond

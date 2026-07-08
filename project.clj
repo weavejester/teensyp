@@ -8,6 +8,7 @@
   :source-paths ["src/clj"]
   :java-source-paths ["src/java"]
   :javac-options ["--release" "11"]
-  :global-vars {*warn-on-reflection* true}
+  :global-vars {*warn-on-reflection* true
+                *unchecked-math* :warn-on-boxed}
   :codox {:output-path "codox"
           :metadata {:doc/format :markdown}})

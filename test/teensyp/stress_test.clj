@@ -66,7 +66,7 @@
           numbers (partition (/ amount threads) (shuffle (range amount)))
           sum     (/ (* (dec amount) amount) 2)
           results (map #(future (server-output-sum % 4567 5000)) numbers)]
-      (is (= (* 2 sum)
+      (is (= (* 2 ^long sum)
              (time (reduce + (map deref results))))))))
 
 (deftest streaming-stress-test
@@ -78,5 +78,5 @@
           numbers (partition (/ amount threads) (shuffle (range amount)))
           sum     (/ (* (dec amount) amount) 2)
           results (map #(future (server-output-sum % 4568 5000)) numbers)]
-      (is (= (* 2 sum)
+      (is (= (* 2 ^long sum)
              (time (reduce + (map deref results))))))))

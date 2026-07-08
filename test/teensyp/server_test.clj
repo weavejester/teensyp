@@ -192,7 +192,7 @@
                       (fn
                         ([sock] (reset! socket sock))
                         ([_ _ ^ByteBuffer buf]
-                         (when (pos? @read-count)
+                         (when (pos? ^long @read-count)
                            (.position buf (.limit buf)))  ; fake read
                          (swap! read-count inc))
                         ([_ _]))})]
