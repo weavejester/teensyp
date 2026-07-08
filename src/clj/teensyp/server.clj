@@ -371,7 +371,7 @@
 (defn- server-loop
   [^ServerSocketChannel server-ch ^Selector selector
    ^ExecutorService executor opts]
-  (let [submit  #(.submit executor ^Runnable %)
+  (let [submit  #(.execute executor ^Runnable %)
         pending (ConcurrentHashMap/newKeySet)]
     (try
       (loop []
