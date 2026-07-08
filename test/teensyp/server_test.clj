@@ -324,3 +324,36 @@
                                            :recv-buffer-size 2048}))]
     (is (true? (.getOption server StandardSocketOptions/SO_REUSEADDR)))
     (is (= 2048 (.getOption server StandardSocketOptions/SO_RCVBUF)))))
+
+(deftest direct-read-buffer-test
+  (testing "default is not direct"
+    (let [direct-buffer? (promise)]
+      (with-open [_ (tcp/start-server
+                     {:port 3469
+                      :handler
+                      (fn
+                        ([_])
+                        ([_ _ ^ByteBuffer buf]
+                         (deliver direct-buffer? (.isDirect buf)))
+                        ([_ _]))})]
+        (with-open [sock (Socket. "localhost" 3469)]
+          (with-open [writer (io/writer (.getOutputStream sock))]
+            (.write writer "Hello World")
+            (.flush writer)))
+        (is (false? (deref direct-buffer? 1000 :timeout))))))
+  (testing "direct buffer can be specified"
+    (let [direct-buffer? (promise)]
+      (with-open [_ (tcp/start-server
+                     {:port 3470
+                      :direct-read-buffer? true
+                      :handler
+                      (fn
+                        ([_])
+                        ([_ _ ^ByteBuffer buf]
+                         (deliver direct-buffer? (.isDirect buf)))
+                        ([_ _]))})]
+        (with-open [sock (Socket. "localhost" 3470)]
+          (with-open [writer (io/writer (.getOutputStream sock))]
+            (.write writer "Hello World")
+            (.flush writer)))
+        (is (true? (deref direct-buffer? 1000 :timeout)))))))

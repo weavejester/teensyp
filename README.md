@@ -89,17 +89,18 @@ TeensyP makes several guarantees that apply per socket:
 
 The `start-server` function takes a number of options:
 
-| Key                   | Description                                         | Mandatory | Default |
-|-----------------------|-----------------------------------------------------|-----------|---------|
-| `:control-queue-size` | The max number of queued control events             |           | 32      |
-| `:executor`           | An `ExecutorService` to use for handler calls       |           |         |
-| `:handler`            | The handler function                                | Yes       |         |
-| `:port`               | The port number to listen on                        | Yes       |         |
-| `:read-buffer-size`   | The size in bytes of the channel read buffer        |           | 8K      |
-| `:recv-buffer-size`   | The receive buffer size (i.e. the SO_RCVBUF option) |           |         |
-| `:reuse-address?`     | The SO_REUSEADDR socket option                      |           | false   |
-| `:write-buffer-size`  | The size in bytes of the channel write buffer       |           | 32K     |
-| `:write-queue-size`   | The maximum number of writes that can be queued     |           | 64      |
+| Key                    | Description                                         | Mandatory | Default |
+|------------------------|-----------------------------------------------------|-----------|---------|
+| `:control-queue-size`  | The max number of queued control events             |           | 32      |
+| `:direct-read-buffer?` | Allocate a direct ByteBuffer for reads              |           | false   |
+| `:executor`            | An `ExecutorService` to use for handler calls       |           |         |
+| `:handler`             | The handler function                                | Yes       |         |
+| `:port`                | The port number to listen on                        | Yes       |         |
+| `:read-buffer-size`    | The size in bytes of the channel read buffer        |           | 8K      |
+| `:recv-buffer-size`    | The receive buffer size (i.e. the SO_RCVBUF option) |           |         |
+| `:reuse-address?`      | The SO_REUSEADDR socket option                      |           | false   |
+| `:write-buffer-size`   | The size in bytes of the channel write buffer       |           | 32K     |
+| `:write-queue-size`    | The maximum number of writes that can be queued     |           | 64      |
 
 ## Documentation
 

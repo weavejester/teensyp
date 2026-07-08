@@ -189,13 +189,15 @@
 
 (defn- new-context
   [^SocketChannel ch pending-set
-   {:keys [control-queue-size read-buffer-size
+   {:keys [control-queue-size direct-read-buffer? read-buffer-size
            write-buffer-size write-queue-size]
     :or   {control-queue-size 32
            read-buffer-size   8192
            write-buffer-size  32768
            write-queue-size   64}}]
-  (let [read-buffer (ByteBuffer/allocate read-buffer-size)]
+  (let [read-buffer (if direct-read-buffer?
+                      (ByteBuffer/allocateDirect read-buffer-size)
+                      (ByteBuffer/allocate read-buffer-size))]
     (->Context (volatile! nil)                           ; :close-ex
                (ArrayBlockingQueue. control-queue-size)  ; :control-queue
                (volatile! 0)                             ; :flags
@@ -399,6 +401,7 @@
   - `:port` - the port number to listen on (mandatory)
   - `:handler` - a handler function (mandatory, see below)
   - `:control-queue-size` - the max number of queued control events (default 32)
+  - `:direct-read-buffer?` - allocate a direct buffer for reads (default false)
   - `:executor` - a custom ExecutorService to supply worker threads
   - `:read-buffer-size` - the read buffer size in bytes (default 8K)
   - `:recv-buffer-size` - the receive buffer size (i.e. the SO_RCVBUF option)
