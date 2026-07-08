@@ -85,11 +85,11 @@
   
   Accepts an options map with the following keys:
 
-  :executor - an executor for running the supplied function, defaults to a
-              fixed thread pool of 32 threads
+  :executor - an executor for running the supplied function (defaults to a
+              fixed thread pool of 32 threads)
   :on-close - a function called when the InputStream is closed, takes a
               single socket argument
-  :read-buffer-size - the size in bytes of the read buffer, defaults to 8K
+  :read-buffer-size - the size in bytes of the read buffer (defaults to 8K)
 
   Triggering the 2-argument close arity of the handler will close the
   associated InputStream."
