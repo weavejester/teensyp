@@ -317,13 +317,14 @@
         (is (= 3469 (.getPort ^InetSocketAddress (:local-address info))))))))
 
 (deftest socket-option-test
-  (with-open [server (tcp/server-channel (tcp/run-server
-                                          {:port 3470
-                                           :handler nil-handler
-                                           :reuse-address? true
-                                           :recv-buffer-size 2048}))]
-    (is (true? (.getOption server StandardSocketOptions/SO_REUSEADDR)))
-    (is (= 2048 (.getOption server StandardSocketOptions/SO_RCVBUF)))))
+  (with-open [server (tcp/run-server
+                      {:port 3470
+                       :handler nil-handler
+                       :reuse-address? true
+                       :recv-buffer-size 2048})]
+    (let [ch (tcp/server-channel server)]
+      (is (true? (.getOption ch StandardSocketOptions/SO_REUSEADDR)))
+      (is (= 2048 (.getOption ch StandardSocketOptions/SO_RCVBUF))))))
 
 (deftest direct-read-buffer-test
   (testing "default is not direct"
