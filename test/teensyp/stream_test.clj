@@ -123,6 +123,7 @@
                         (.flush w)
                         (.write w (str "bar" (.readLine r))))
                       (catch Exception ex
+                        (prn ex)
                         (deliver error ex)))))
         buffer   (ByteBuffer/allocate 128)
         output   (atom [])

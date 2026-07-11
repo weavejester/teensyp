@@ -3,12 +3,10 @@
   (:require [teensyp.buffer :as buf]
             [teensyp.concurrent :refer [with-lock]]
             [teensyp.server :as tcp])
-  (:import [java.io IOException OutputStream]
+  (:import [java.io IOException InputStream OutputStream]
            [java.nio ByteBuffer]
            [java.util.concurrent Executor Executors]
-           [java.util.concurrent.locks Condition LockSupport ReentrantLock]
-           [teensyp IInputStream IOutputStream
-            ProxyInputStream ProxyOutputStream]))
+           [java.util.concurrent.locks Condition LockSupport ReentrantLock]))
 
 (defn input-stream
   "Create an InputStream from a read and optional close function. The read
@@ -17,13 +15,23 @@
   function should return the number of bytes read, or -1 if the stream is
   closed. The close function maps to the `.close` method and takes zero
   arguments."
-  ([readf]
+  (^InputStream [readf]
    (input-stream readf (fn [])))
-  ([readf closef]
-   (ProxyInputStream.
-    (reify IInputStream
-      (read [_ b off len] (if (zero? len) 0 (readf b off len)))
-      (close [_] (closef))))))
+  (^InputStream [readf closef]
+   #?(:bb
+      (let [single-byte (byte-array 1)]
+        (proxy [InputStream] []
+          (available [] 0)
+          (close [] (closef))
+          (read
+            ([] (-> (readf single-byte 0 1) (aget 0)))
+            ([bs] (.read this bs 0 (alength bs)))
+            ([bs off len] (if (zero? len) 0 (readf bs off len))))))
+      :clj
+      (teensyp.ProxyInputStream.
+       (reify teensyp.IInputStream
+         (read [_ b off len] (if (zero? len) 0 (readf b off len)))
+         (close [_] (closef)))))))
 
 (defn output-stream
   "Create an OutputStream from a write function and optional close and
@@ -32,16 +40,29 @@
   an offset and a length. The close function maps to the `.close` method and
   takes zero arguments. Similarly the flush function maps to the `.flush`
   method and also takes zero arguments."
-  ([writef]
+  (^OutputStream [writef]
    (output-stream writef (fn [])))
-  ([writef closef]
+  (^OutputStream [writef closef]
    (output-stream writef closef (fn [])))
-  ([writef closef flushf]
-   (ProxyOutputStream.
-    (reify IOutputStream
-      (write [_ b off len] (when-not (zero? len) (writef b off len)))
-      (close [_] (closef))
-      (flush [_] (flushf))))))
+  (^OutputStream [writef closef flushf]
+   #?(:bb
+      (let [single-byte (byte-array 1)]
+        (proxy [OutputStream] []
+          (close [] (closef))
+          (flush [] (flushf))
+          (write
+            ([b]
+             (if (int? b)
+               (writef (doto single-byte (aset 0 (byte b)) 0 1))
+               (.write this b 0 (alength b))))
+            ([bs off len]
+             (when-not (zero? len) (writef bs off len))))))
+      :clj
+      (teensyp.ProxyOutputStream.
+       (reify teensyp.IOutputStream
+         (write [_ b off len] (when-not (zero? len) (writef b off len)))
+         (close [_] (closef))
+         (flush [_] (flushf)))))))
 
 (defn socket->output-stream
   "Create a blocking OutputStream from a TeensyP Socket. Writing to the stream
