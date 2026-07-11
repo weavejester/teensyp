@@ -254,7 +254,7 @@
 (deftest server-read-limit-test
   (let [input (atom [])]
     (with-open [_ (tcp/run-server
-                   {:port 3460
+                   {:port 3466
                     :read-buffer-size 3
                     :handler (fn
                                ([_] {})
@@ -262,7 +262,7 @@
                                 (swap! input conj (<-buffer buffer))
                                 (Thread/sleep 20))
                                ([_ _]))})]
-      (with-open [sock (Socket. "localhost" 3460)]
+      (with-open [sock (Socket. "localhost" 3466)]
         (with-open [writer (io/writer (.getOutputStream sock))]
           (doto writer (.write "foo") .flush)
           (doto writer (.write "bar") .flush)
@@ -275,26 +275,26 @@
   (testing "Exception on init"
     (let [error (promise)]
       (with-open [_ (tcp/run-server
-                     {:port 3466
+                     {:port 3467
                       :handler
                       (fn
                         ([_] (throw (ex-info "Testing" {})))
                         ([_ _ _])
                         ([_ ex] (deliver error ex)))})]
-        (Socket. "localhost" 3466)
+        (Socket. "localhost" 3467)
         (let [err (deref error 5000 :timeout)]
           (is (instance? clojure.lang.ExceptionInfo err))
           (is (= "Testing" (ex-message err)))))))
   (testing "Exception on message receive"
     (let [error (promise)]
       (with-open [_ (tcp/run-server
-                     {:port 3467
+                     {:port 3468
                       :handler
                       (fn
                         ([_])
                         ([_ _ buf] (throw (ex-info (<-buffer buf) {})))
                         ([_ ex] (deliver error ex)))})]
-        (with-open [sock (Socket. "localhost" 3467)]
+        (with-open [sock (Socket. "localhost" 3468)]
           (with-open [writer (io/writer (.getOutputStream sock))]
             (.write writer "Hello World")
             (.flush writer)))
@@ -305,20 +305,20 @@
 (deftest server-socket-info-test
   (let [sock-info (promise)]
     (with-open [_ (tcp/run-server
-                   {:port 3468
+                   {:port 3469
                     :handler
                     (fn
                       ([sock] (deliver sock-info (tcp/socket-info sock)))
                       ([_ _ _])
                       ([_ _]))})]
-      (with-open [_ (Socket. "localhost" 3468)])
+      (with-open [_ (Socket. "localhost" 3469)])
       (let [info (deref sock-info 5000 :timeout)]
         (is (= #{:local-address :remote-address} (set (keys info))))
-        (is (= 3468 (.getPort ^InetSocketAddress (:local-address info))))))))
+        (is (= 3469 (.getPort ^InetSocketAddress (:local-address info))))))))
 
 (deftest socket-option-test
   (with-open [server (tcp/server-channel (tcp/run-server
-                                          {:port 3469
+                                          {:port 3470
                                            :handler nil-handler
                                            :reuse-address? true
                                            :recv-buffer-size 2048}))]
@@ -329,14 +329,14 @@
   (testing "default is not direct"
     (let [direct-buffer? (promise)]
       (with-open [_ (tcp/run-server
-                     {:port 3469
+                     {:port 3471
                       :handler
                       (fn
                         ([_])
                         ([_ _ ^ByteBuffer buf]
                          (deliver direct-buffer? (.isDirect buf)))
                         ([_ _]))})]
-        (with-open [sock (Socket. "localhost" 3469)]
+        (with-open [sock (Socket. "localhost" 3471)]
           (with-open [writer (io/writer (.getOutputStream sock))]
             (.write writer "Hello World")
             (.flush writer)))
@@ -344,7 +344,7 @@
   (testing "direct buffer can be specified"
     (let [direct-buffer? (promise)]
       (with-open [_ (tcp/run-server
-                     {:port 3470
+                     {:port 3472
                       :direct-read-buffer? true
                       :handler
                       (fn
@@ -352,15 +352,15 @@
                         ([_ _ ^ByteBuffer buf]
                          (deliver direct-buffer? (.isDirect buf)))
                         ([_ _]))})]
-        (with-open [sock (Socket. "localhost" 3470)]
+        (with-open [sock (Socket. "localhost" 3472)]
           (with-open [writer (io/writer (.getOutputStream sock))]
             (.write writer "Hello World")
             (.flush writer)))
         (is (true? (deref direct-buffer? 1000 :timeout)))))))
 
 (deftest server-variadic-options-test
-  (with-open [_ (tcp/run-server :port 3471 :handler echo-handler)]
-    (let [sock (Socket. "localhost" 3471)]
+  (with-open [_ (tcp/run-server :port 3473 :handler echo-handler)]
+    (let [sock (Socket. "localhost" 3473)]
       (with-open [writer (io/writer (.getOutputStream sock))]
         (with-open [reader ^BufferedReader (io/reader (.getInputStream sock))]
           (doto writer (.write "foo\n") .flush)
