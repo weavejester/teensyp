@@ -4,7 +4,7 @@
   (:import [java.io Closeable IOException]
            [java.net InetSocketAddress StandardSocketOptions]
            [java.nio ByteBuffer]
-           [java.nio.channels Selector SelectionKey
+           [java.nio.channels CancelledKeyException Selector SelectionKey
             ServerSocketChannel SocketChannel]
            [java.util Queue Set]
            [java.util.concurrent ArrayBlockingQueue ConcurrentHashMap
@@ -57,7 +57,8 @@
     (with-lock (.lock context)
       (let [flags (vswap! vflags f)]
         (when (.isValid key)
-          (.interestOps key (interest-ops flags)))
+          (try (.interestOps key (interest-ops flags))
+               (catch CancelledKeyException _ex)))
         flags))))
 
 (defn- set-flag [key ^long flag]
