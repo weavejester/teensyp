@@ -370,3 +370,25 @@
           (is (= "bar" (.readLine reader)))
           (doto writer (.write "foo") (.write "bar\n") .flush)
           (is (= "foobar" (.readLine reader))))))))
+
+(deftest resume-writes-only-test
+  (let [socket (promise)
+        buffer (atom [])]
+    (with-open [_ (tcp/run-server
+                   {:port 3474
+                    :handler
+                    (fn
+                      ([s] (deliver socket s))
+                      ([_ _ ^ByteBuffer buf]
+                       (let [bs (byte-array 3)]
+                         (.get buf bs)
+                         (swap! buffer conj
+                                (String. bs StandardCharsets/US_ASCII))))
+                      ([_ _]))})]
+      (with-open [sock (Socket. "localhost" 3474)]
+        (with-open [writer (io/writer (.getOutputStream sock))]
+          (doto writer (.write "foobar") .flush)
+          (Thread/sleep 5)
+          (tcp/resume-reads @socket)
+          (Thread/sleep 5)
+          (is (= ["foo" "bar"] @buffer)))))))

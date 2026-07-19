@@ -340,7 +340,8 @@
     (> (.position read-buffer) (.position read-view))))
 
 (defn- handle-control [^SelectionKey key submit opts]
-  (let [^Queue control-queue (.control-queue ^Context (.attachment key))]
+  (let [^Context context       (.attachment key)
+        ^Queue   control-queue (.control-queue context)]
     (loop [resumed? false]
       (if-some [[event callback] (.poll control-queue)]
         (case event
@@ -353,7 +354,10 @@
         (when (and resumed?
                    (not (has-flag? key WORKING))
                    (has-read-data? key))
-          (submit-read-handler key submit opts))))))
+          (let [read-buffer           (.read-buffer context)
+                ^ByteBuffer read-view (.read-view context)]
+            (compact-buffer-by-amount read-buffer (.position read-view))
+            (submit-read-handler key submit opts)))))))
 
 (defn- handle-pending [^SelectionKey key submit opts]
   (when-not (has-flag? key WORKING)
