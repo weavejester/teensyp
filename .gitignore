@@ -11,5 +11,6 @@ pom.xml.sig
 /.nrepl-port
 /.prepl-port
 /.cpcache
-/.clj-kondo
+/.clj-kondo/*
+!/.clj-kondo/config.edn
 /codox
