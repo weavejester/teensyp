@@ -17,6 +17,7 @@ jobs:
         uses: DeLaGuardo/setup-clojure@13.6.1
         with:
           lein: 2.12.0
+          bb: 1.13.219
 
       - name: Cache clojure dependencies
         uses: actions/cache@v5
@@ -25,5 +26,8 @@ jobs:
           key: cljdeps-${{ hashFiles('project.clj') }}
           restore-keys: cljdeps-
 
-      - name: Run tests
+      - name: Run Clojure tests
         run: lein test
+
+      - name: Run Babashka tests
+        run: bb test

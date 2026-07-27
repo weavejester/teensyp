@@ -1,0 +1,16 @@
+{:deps  {dev.weavejester/teensyp {:local/root "."}}
+ :tasks {test {:doc "Run Babashka tests"
+               :extra-paths ["test"]
+               :requires ([clojure.test :as t]
+                          [teensyp.buffer-test]
+                          [teensyp.server-test]
+                          [teensyp.stream-test]
+                          [teensyp.stress-test])
+               :task (let [{:keys [fail error]}
+                           (t/run-tests 'teensyp.buffer-test
+                                        'teensyp.server-test
+                                        'teensyp.stream-test
+                                        'teensyp.stress-test)]
+                       (if (or (pos? fail) (pos? error))
+                         (throw (ex-info "Tests failed" {:babashka/exit 1}))
+                         (System/exit 0)))}}}
