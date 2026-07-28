@@ -2,6 +2,10 @@
 
 A small, zero-dependency Clojure TCP server that uses Java NIO.
 
+It also supports [Babashka][] 1.13.219 and later.
+
+[babashka]: https://babashka.org/
+
 ## Installation
 
 Add the following dependency to your deps.edn file:
