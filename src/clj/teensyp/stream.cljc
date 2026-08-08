@@ -5,64 +5,66 @@
             [teensyp.server :as tcp])
   (:import [java.io IOException InputStream OutputStream]
            [java.nio ByteBuffer]
+           [java.nio.channels Channels ReadableByteChannel WritableByteChannel]
            [java.util.concurrent Executor Executors]
            [java.util.concurrent.locks Condition LockSupport ReentrantLock]))
 
 (defn input-stream
   "Create an InputStream from a read and optional close function. The read
-  function maps to the `.read` method on the InputStream class and takes 3
-  arguments: a byte array to receive the data, an offset and a length. The read
-  function should return the number of bytes read, or -1 if the stream is
-  closed. The close function maps to the `.close` method and takes zero
-  arguments."
+  function maps to the `.read` method on the InputStream class and takes a
+  ByteBuffer as its argument. The read function should return the number of
+  bytes read, or -1 if the stream is closed. The close function maps to the
+  `.close` method and takes zero arguments."
   (^InputStream [readf]
    (input-stream readf (fn [])))
   (^InputStream [readf closef]
    #?(:bb
-      (let [single-byte (byte-array 1)]
+      (let [single-byte (ByteBuffer/allocate 1)]
         (proxy [InputStream] []
           (available [] 0)
           (close [] (closef))
           (read
-            ([] (-> (readf single-byte 0 1) (aget 0)))
+            ([] (readf single-byte) (.get single-byte 0))
             ([bs] (.read this bs 0 (alength bs)))
-            ([bs off len] (if (zero? len) 0 (readf bs off len))))))
+            ([bs off len]
+             (if (zero? len) 0 (readf (ByteBuffer/wrap bs off len)))))))
       :clj
-      (teensyp.ProxyInputStream.
-       (reify teensyp.IInputStream
-         (read [_ b off len] (if (zero? len) 0 (readf b off len)))
-         (close [_] (closef)))))))
+      (let [open? (volatile! true)]
+        (Channels/newInputStream
+         (reify ReadableByteChannel
+           (isOpen [_] @open?)
+           (read [_ buf]
+             (if (.hasRemaining buf) (readf buf) 0))
+           (close [_] (vreset! open? false) (closef))))))))
 
 (defn output-stream
   "Create an OutputStream from a write function and optional close and
   flush functions. The write function maps to the `.write` method on the
-  OutputStream class and takes 3 arguments: a byte array with the data to send,
-  an offset and a length. The close function maps to the `.close` method and
-  takes zero arguments. Similarly the flush function maps to the `.flush`
-  method and also takes zero arguments."
+  OutputStream class and takes a ByteBuffer as an argument. The write function
+  should return the number of bytes written. The close function maps to the
+  `.close` method and takes zero arguments."
   (^OutputStream [writef]
    (output-stream writef (fn [])))
   (^OutputStream [writef closef]
-   (output-stream writef closef (fn [])))
-  (^OutputStream [writef closef flushf]
    #?(:bb
-      (let [single-byte (byte-array 1)]
+      (let [single-byte (ByteBuffer/allocate 1)]
         (proxy [OutputStream] []
           (close [] (closef))
-          (flush [] (flushf))
+          (flush [])
           (write
             ([b]
              (if (int? b)
-               (writef (doto single-byte (aset 0 (byte b)) 0 1))
+               (writef (doto single-byte (.put 0 (byte b))))
                (.write this b 0 (alength b))))
             ([bs off len]
-             (when-not (zero? len) (writef bs off len))))))
+             (when-not (zero? len) (writef (ByteBuffer/wrap bs off len)))))))
       :clj
-      (teensyp.ProxyOutputStream.
-       (reify teensyp.IOutputStream
-         (write [_ b off len] (when-not (zero? len) (writef b off len)))
-         (close [_] (closef))
-         (flush [_] (flushf)))))))
+      (let [open? (volatile! true)]
+        (Channels/newOutputStream
+         (reify WritableByteChannel
+           (isOpen [_] @open?)
+           (write [_ buf] (if (.hasRemaining buf) (writef buf) 0))
+           (close [_] (vreset! open? false) (closef))))))))
 
 (defn socket->output-stream
   "Create a blocking OutputStream from a TeensyP Socket. Writing to the stream
@@ -84,11 +86,13 @@
                       (vreset! done false)))
          on-close (or on-close (fn [sock] (blocking #(tcp/close sock %))))]
      (output-stream
-      (fn write [^bytes b off len]
+      (fn write [^ByteBuffer buf]
         (with-lock lock
           (if @closed
             (throw (IOException. "OutputStream closed"))
-            (blocking #(tcp/write socket (ByteBuffer/wrap b off len) %)))))
+            (let [pos (.position buf)]
+              (blocking #(tcp/write socket buf %))
+              (- (.position buf) pos)))))
       (fn close []
         (with-lock lock
           (vreset! closed true)
@@ -126,13 +130,12 @@
             paused   (volatile! false)
             closed   (volatile! false)
             buffer   (.flip (ByteBuffer/allocate read-buffer-size))
-            readf    (fn [b off ^long len]
+            readf    (fn [^ByteBuffer buf]
                        (with-lock lock
                          (loop []
                            (cond
                              (.hasRemaining buffer)
-                             (let [len (min len (.remaining buffer))]
-                               (.get buffer b off len)
+                             (let [len (buf/copy buffer buf)]
                                (when @paused
                                  (vreset! paused false)
                                  (tcp/resume-reads socket))

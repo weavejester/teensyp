@@ -77,7 +77,7 @@
         (is (= "abcfoobar" (String. in-buf 0 9))))
       (testing "closing"
         (handler state nil)
-        (is (= -1 (.read ^InputStream @in-stream in-buf 9 10))))))
+        (is (= -1 (.read ^InputStream @in-stream in-buf 9 7))))))
   (testing "custom close function"
     (let [closed  (promise)
           handler (stream/input-stream-handler

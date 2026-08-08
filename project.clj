@@ -6,8 +6,6 @@
   :dependencies [[org.clojure/clojure "1.12.5"]]
   :plugins [[lein-codox "0.10.8"]]
   :source-paths ["src/clj"]
-  :java-source-paths ["src/java"]
-  :javac-options ["--release" "11"]
   :global-vars {*warn-on-reflection* true
                 *unchecked-math* :warn-on-boxed}
   :codox {:output-path "codox"
