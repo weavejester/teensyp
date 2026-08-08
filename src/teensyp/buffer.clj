@@ -47,7 +47,7 @@
   (if (zero? (alength needle))
     -1
     (let [b   (aget needle 0)
-          end (- (.limit buffer) (alength needle) 1)]
+          end (- (.limit buffer) (alength needle))]
       (loop [i (.position buffer)]
         (if (and (= b (.get buffer i))
                  (matches-tail-bytes? buffer i needle))

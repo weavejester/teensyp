@@ -34,7 +34,10 @@
                   (buf/index-of-array (byte-array [111 108])))))
     (is (= 7 (-> (ByteBuffer/wrap bs)
                  (doto (.position 5))
-                 (buf/index-of-array (byte-array [108 108])))))))
+                 (buf/index-of-array (byte-array [108 108])))))
+    (is (= 8 (-> (ByteBuffer/wrap bs)
+                 (doto (.position 5))
+                 (buf/index-of-array (byte-array [108 111])))))))
 
 (deftest read-line-test
   (let [buf (ByteBuffer/wrap (.getBytes "hello\nworld\n" ascii))]
