@@ -5,7 +5,6 @@
             :url "https://www.eclipse.org/legal/epl-2.0/"}
   :dependencies [[org.clojure/clojure "1.12.5"]]
   :plugins [[lein-codox "0.10.8"]]
-  :source-paths ["src/clj"]
   :global-vars {*warn-on-reflection* true
                 *unchecked-math* :warn-on-boxed}
   :codox {:output-path "codox"
