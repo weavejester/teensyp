@@ -65,7 +65,7 @@
         start (.position buffer)
         index (index-of buffer LF)]
     (when (not= index -1)
-      (let [len (if (= CR (.get buffer (dec index)))
+      (let [len (if (and (pos? index) (= CR (.get buffer (dec index))))
                   (- index start 1)
                   (- index start))
             bs  (byte-array len)]

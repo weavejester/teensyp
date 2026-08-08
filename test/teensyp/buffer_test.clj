@@ -60,7 +60,10 @@
     (is (= "c" (buf/read-line buf ascii)))
     (is (= 6 (.position buf)))
     (is (nil? (buf/read-line buf ascii)))
-    (is (= 6 (.position buf)))))
+    (is (= 6 (.position buf))))
+  (let [buf (ByteBuffer/wrap (.getBytes "\nhello\n" ascii))]
+    (is (= "" (buf/read-line buf ascii)))
+    (is (= 1 (.position buf)))))
 
 (deftest copy-test
   (let [buf (buf/buffer 5)
