@@ -10,11 +10,11 @@ It also supports [Babashka][] 1.13.219 and later.
 
 Add the following dependency to your deps.edn file:
 
-    dev.weavejester/teensyp {:mvn/version "0.8.2"}
+    dev.weavejester/teensyp {:mvn/version "0.9.0"}
 
 Or to your Leiningen project file:
 
-    [dev.weavejester/teensyp "0.8.2"]
+    [dev.weavejester/teensyp "0.9.0"]
 
 ## Usage
 
