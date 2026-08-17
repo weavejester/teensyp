@@ -392,3 +392,10 @@
           (tcp/resume-reads @socket)
           (Thread/sleep 5)
           (is (= ["foo" "bar"] @buffer)))))))
+
+(deftest close-and-start-test
+  (dotimes [_ 1000]
+    (with-open [_ (tcp/run-server
+                   {:port 3475
+                    :handler nil-handler
+                    :reuse-address? true})])))

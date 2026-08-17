@@ -442,16 +442,18 @@
   {:pre [(int? port)]}
   (let [server-ch (server-socket-channel port)
         selector  (server-selector server-ch)
-        executor  (or executor (new-default-executor))]
+        executor  (or executor (new-default-executor))
+        thread    (Thread. #(server-loop server-ch selector executor opts))]
     (when reuse-address?
       (.setOption server-ch StandardSocketOptions/SO_REUSEADDR true))
     (when recv-buffer-size
       (.setOption server-ch StandardSocketOptions/SO_RCVBUF
                   (Integer. ^long recv-buffer-size)))
-    (.start (Thread. #(server-loop server-ch selector executor opts)))
+    (.start thread)
     (reify Server
       (server-channel [_] server-ch)
       Closeable
       (close [_]
         (.close server-ch)
-        (.wakeup selector)))))
+        (.wakeup selector)
+        (.join thread)))))
