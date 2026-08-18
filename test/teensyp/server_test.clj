@@ -4,7 +4,7 @@
             [teensyp.server :as tcp]
             [teensyp.buffer :as buf])
   (:import [java.io BufferedReader]
-           [java.net InetSocketAddress Socket StandardSocketOptions]
+           [java.net InetAddress InetSocketAddress Socket StandardSocketOptions]
            [java.nio ByteBuffer]
            [java.nio.charset StandardCharsets]))
 
@@ -399,3 +399,12 @@
                    {:port 3475
                     :handler nil-handler
                     :reuse-address? true})])))
+
+(deftest server-host-test
+  (with-open [server (tcp/run-server
+                      {:host "127.0.0.1"
+                       :port 3476
+                       :handler nil-handler})]
+    (let [ch (tcp/server-channel server)]
+      (is (= (InetAddress/getByName "127.0.0.1")
+             (.getAddress ^InetSocketAddress (.getLocalAddress ch)))))))

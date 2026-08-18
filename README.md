@@ -99,6 +99,7 @@ The `run-server` function takes a number of options:
 | `:direct-read-buffer?` | Allocate a direct ByteBuffer for reads              |           | false   |
 | `:executor`            | An `ExecutorService` to use for handler calls       |           |         |
 | `:handler`             | The handler function                                | Yes       |         |
+| `:host`                | The hostname or IP address to listen on             |           | nil     |
 | `:port`                | The port number to listen on                        | Yes       |         |
 | `:read-buffer-size`    | The size in bytes of the channel read buffer        |           | 8K      |
 | `:recv-buffer-size`    | The receive buffer size (i.e. the SO_RCVBUF option) |           |         |

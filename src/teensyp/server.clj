@@ -2,7 +2,7 @@
   "The main server namespace."
   (:require [teensyp.concurrent :refer [with-lock]])
   (:import [java.io Closeable IOException]
-           [java.net InetSocketAddress StandardSocketOptions]
+           [java.net InetAddress InetSocketAddress StandardSocketOptions]
            [java.nio ByteBuffer]
            [java.nio.channels CancelledKeyException Selector SelectionKey
             ServerSocketChannel SocketChannel]
@@ -12,10 +12,10 @@
            [java.util.concurrent.atomic AtomicInteger]
            [java.util.concurrent.locks ReentrantLock]))
 
-(defn- server-socket-channel ^ServerSocketChannel [port]
+(defn- server-socket-channel ^ServerSocketChannel [host port]
   (doto (ServerSocketChannel/open)
     (.configureBlocking false)
-    (.bind (InetSocketAddress. port))))
+    (.bind (InetSocketAddress. (InetAddress/getByName host) ^int port))))
 
 (defn- server-selector ^Selector [^ServerSocketChannel server-ch]
   (let [selector (Selector/open)]
@@ -405,6 +405,7 @@
 
   - `:port` - the port number to listen on (mandatory)
   - `:handler` - a handler function (mandatory, see below)
+  - `:host` - the hostname or IP address to listen on (default nil)
   - `:control-queue-size` - the max number of queued control events (default 32)
   - `:direct-read-buffer?` - allocate a direct buffer for reads (default false)
   - `:executor` - a custom ExecutorService to supply worker threads
@@ -438,9 +439,9 @@
   The returned server instance implements `java.io.Closeable`, and therefore
   can be used with the `with-open` macro."
   ^Closeable
-  [& {:keys [port executor recv-buffer-size reuse-address?] :as opts}]
+  [& {:keys [host port executor recv-buffer-size reuse-address?] :as opts}]
   {:pre [(int? port)]}
-  (let [server-ch (server-socket-channel port)
+  (let [server-ch (server-socket-channel host port)
         selector  (server-selector server-ch)
         executor  (or executor (new-default-executor))
         thread    (Thread. #(server-loop server-ch selector executor opts))]
